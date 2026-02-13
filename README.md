@@ -56,8 +56,8 @@ Exported session artifacts are stored in:
 - `codex_sessions/`
 
 Naming scheme uses migration-style timestamps with meaningful suffixes, for example:
-- `20260213134203_redacted_current_codex_session_jsonl_export.jsonl`
-- `20260213134203_redacted_current_codex_session_jsonl_export.html`
+- [`20260213134203_redacted_current_codex_session_jsonl_export.jsonl`](codex_sessions/20260213134203_redacted_current_codex_session_jsonl_export.jsonl)
+- [`20260213134203_redacted_current_codex_session_jsonl_export.html`](codex_sessions/20260213134203_redacted_current_codex_session_jsonl_export.html)
 
 ## Example Files
 
