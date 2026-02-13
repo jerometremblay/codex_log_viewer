@@ -1,66 +1,68 @@
 # Codex Log Viewer
 
-A tiny Python tool that turns Codex JSONL session logs into a clean, self‑contained HTML page with a light pastel theme, Markdown rendering, collapsible sections, and a tiny inline code highlighter.
+This repository is first and foremost an automatic rewrite of the original Codex log viewer implementation into a browser-native frontend.
+Original project: [timvw/codex-transcripts](https://github.com/timvw/codex-transcripts).
 
-- Input: JSONL logs with events like `message`, `reasoning`, `function_call`, `function_call_output`.
-- Output: One standalone HTML file with inline CSS/JS (UTF‑8, emoji safe).
+The primary deliverable is the JS/HTML/CSS viewer:
+- `codex_log_viewer.js`
+- `codex_log_viewer.html`
+- `codex_log_viewer.css`
 
-## Features
+## What This Rewrite Does
 
-- Markdown rendering for user, assistant, and reasoning text (`markdown-it-py`).
-- Collapsible panels for reasoning summaries and function outputs with a toolbar to collapse/expand all.
-- Fixed‑width blocks for function calls and outputs; long outputs scroll.
-- Tiny client‑side highlighter for code fences in Markdown (json, python, bash/sh, diff).
-- Hides encrypted reasoning content; shows only the summary text.
-- Supports both legacy JSONL events and the new wrapped format where each line is `{ "timestamp": ..., "payload": { ... } }`. In the wrapped format, each block shows the event timestamp in the top‑right.
-- Handles new event kinds found in wrapped logs: `user_message`, `agent_message`, `agent_reasoning`, and `token_count` (token usage). Token usage renders as a structured block and can be toggled via the toolbar filter. The Token Usage filter is OFF by default.
+- Reads Codex session JSONL logs directly in the browser.
+- Supports both legacy and wrapped event lines (`{ "timestamp": ..., "payload": ... }`).
+- Renders user/assistant/reasoning/function-call/function-output/token-usage blocks.
+- Includes collapse/expand controls, filters, markdown rendering, and lightweight code highlighting.
+- Falls back to embedded inline session data when fetch is blocked/unavailable.
 
-## Getting Started
+## Primary Usage (Browser-Native)
 
-1) Install dependencies
+1) Set the source file in `codex_log_viewer.html`:
 
-```bash
-pip install -r requirements.txt
+```html
+<meta name="codex-log-source" content="example.jsonl" />
 ```
 
-2) Render a log to HTML
+2) Serve the repo over HTTP:
 
 ```bash
-# write to a file
-python3 render_jsonl.py example.jsonl -o example.html
-
-# or to stdout
-python3 render_jsonl.py example.jsonl > example.html
+python3 -m http.server 8000
 ```
 
-3) Batch convert all logs from ~/.codex/sessions
+3) Open:
 
-```bash
-# mirrors the ~/.codex/sessions tree into the current directory,
-# converts every .jsonl to .html, and writes a top-level index.html
-python3 render_jsonl.py --all
-
-# optional: point to a different sessions dir
-python3 render_jsonl.py --all --sessions-dir /path/to/sessions
+```text
+http://localhost:8000/codex_log_viewer.html
 ```
 
-4) Open the HTML in your browser
+Optional URL overrides:
 
-```bash
-xdg-open example.html  # Linux
-open example.html      # macOS
+```text
+http://localhost:8000/codex_log_viewer.html?source=example.jsonl
+http://localhost:8000/codex_log_viewer.html?source=example.jsonl&title=Codex%20Session%20Log
+http://localhost:8000/codex_log_viewer.html?source=example.jsonl&showTokenUsage=true
+http://localhost:8000/codex_log_viewer.html?source=example.jsonl&collapseOutputCharThreshold=15000&collapseOutputLineThreshold=300
 ```
+
+Notes:
+- `source` is resolved relative to `codex_log_viewer.html`.
+- If loaded from `file://`, fetch may be blocked by browser security. Serve via HTTP.
+- If the HTML contains embedded inline session data, the viewer can render even when source fetch fails.
+
+## Session Exports in This Repo
+
+Exported session artifacts are stored in:
+- `codex_sessions/`
+
+Naming scheme uses migration-style timestamps with meaningful suffixes, for example:
+- `20260213134203_redacted_current_codex_session_jsonl_export.jsonl`
+- `20260213134203_redacted_current_codex_session_jsonl_export.html`
 
 ## Example Files
 
 - Sample log: [example.jsonl](example.jsonl)
-- Generated HTML: [example.html](https://htmlpreview.github.io/?https://github.com/dschwen/codex_log_viewer/blob/main/example.html)
-
-## Notes
-
-- Only reasoning and function output blocks are collapsible.
-- Function outputs are shown as plain mono text (not Markdown) to avoid accidental formatting.
-- The inline highlighter is intentionally minimal; it escapes HTML before injecting token spans.
+- Generated HTML sample: [example.html](https://htmlpreview.github.io/?https://github.com/dschwen/codex_log_viewer/blob/main/example.html)
 
 ## License
 

@@ -1,0 +1,97 @@
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: #ffffff; color: #1f2937; }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Noto Sans, Ubuntu, Cantarell, 'Helvetica Neue', Arial, 'Apple Color Emoji', 'Segoe UI Emoji'; line-height: 1.5; }
+    .container { max-width: 920px; margin: 0 auto; padding: 24px 16px 80px; }
+    .session { background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; margin-bottom: 20px; }
+    .session .title { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
+    .session .subtitle { color: #6b7280; margin-bottom: 8px; font-size: 13px; }
+    .session .header-row { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px; }
+
+    .toolbar { display: flex; gap: 10px; align-items: center; margin: 12px 0 18px; font-size: 13px; }
+    .toolbar a { color: #374151; background: #f3f4f6; border: 1px solid #e5e7eb; padding: 6px 10px; border-radius: 8px; text-decoration: none; }
+    .toolbar a:hover { background: #eef2ff; border-color: #dbeafe; color: #1d4ed8; }
+    .filters { display: inline-flex; gap: 8px; flex-wrap: wrap; margin-left: 12px; }
+    .filter-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 8px; border: 1px solid #e5e7eb; background: #f9fafb; color: #111827; cursor: pointer; user-select: none; }
+    .filter-chip input { accent-color: #2563eb; }
+    .chip-user { background: #e8f0fe; border-color: #d2e3fc; }
+    .chip-assistant { background: #e6f4ea; border-color: #ccead6; }
+    .chip-reasoning { background: #f3e8ff; border-color: #e9d5ff; }
+    .chip-func-call { background: #fff7e6; border-color: #ffe8bf; }
+    .chip-func-output { background: #f5f5f5; border-color: #e5e7eb; }
+    .chip-plan { background: #e0f2fe; border-color: #bae6fd; }
+
+    .block { border-radius: 12px; padding: 12px 14px; margin: 12px 0; border: 1px solid transparent; }
+    .block .label { font-size: 12px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.8; margin-bottom: 6px; }
+    .block .text { white-space: normal; word-wrap: break-word; overflow-wrap: anywhere; }
+    .code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12.5px; line-height: 1.45; background: rgba(0,0,0,0.02); border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; overflow: auto; max-height: 380px; }
+    .label-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+    .label-row .actions { display: flex; align-items: center; gap: 6px; }
+    .ts-inline { font-size: 12px; color: #6b7280; opacity: 0.9; }
+
+    .markdown { font-size: 14px; }
+    .markdown p { margin: 0.3em 0 0.8em; }
+    .markdown h1, .markdown h2, .markdown h3 { margin: 0.6em 0 0.4em; line-height: 1.25; }
+    .markdown ul, .markdown ol { padding-left: 1.3em; margin: 0.3em 0 0.8em; }
+    .markdown code { background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 4px; padding: 0.1em 0.35em; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12.5px; }
+    .markdown pre { background: rgba(0,0,0,0.02); border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; overflow: auto; }
+    .markdown pre code { background: transparent; border: 0; padding: 0; display: block; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12.5px; }
+    .markdown blockquote { border-left: 3px solid #e5e7eb; padding-left: 12px; color: #4b5563; margin: 0.3em 0 0.8em; }
+
+    .toggle { font-size: 12px; border: 1px solid #e5e7eb; background: #ffffff; border-radius: 6px; padding: 4px 8px; color: #374151; cursor: pointer; }
+    .toggle:hover { background: #f3f4f6; }
+    .collapsible .collapsible-content { display: block; }
+    .collapsible.collapsed .collapsible-content { display: none; }
+
+    .user { background: #e8f0fe; border-color: #d2e3fc; }
+    .user .label { color: #1a73e8; }
+
+    .assistant { background: #e6f4ea; border-color: #ccead6; }
+    .assistant .label { color: #1e8e3e; }
+
+    .reasoning { background: #f3e8ff; border-color: #e9d5ff; }
+    .reasoning .label { color: #7c3aed; }
+
+    .func-call { background: #fff7e6; border-color: #ffe8bf; }
+    .func-call .label { color: #b45309; }
+
+    .func-output { background: #f5f5f5; border-color: #e5e7eb; }
+    .func-output .label { color: #374151; }
+
+    .plan { background: #e0f2fe; border-color: #bae6fd; }
+    .plan .label { color: #0284c7; }
+    .plan-list { list-style: none; padding-left: 0; margin: 6px 0 0; }
+    .plan-list li { margin: 4px 0; }
+    .plan-sym { display: inline-block; width: 1.4em; }
+
+    .apply-patch .actions { display: flex; gap: 6px; }
+    .copy { font-size: 12px; border: 1px solid #e5e7eb; background: #ffffff; border-radius: 6px; padding: 4px 8px; color: #374151; cursor: pointer; }
+    .copy:hover { background: #f3f4f6; }
+    .code.diff, .markdown pre code.language-diff, pre.code > code.language-diff { line-height: 1.2; }
+
+    .usage { background: #fef3c7; border-color: #fde68a; }
+    .usage .label { color: #92400e; }
+    .usage .usage-title { font-weight: 600; margin: 6px 0 4px; font-size: 13px; color: #92400e; }
+    .usage .kv-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 6px 12px; }
+    .usage .kv { background: #fff7ed; border: 1px solid #fde68a; border-radius: 6px; padding: 6px 8px; display: flex; justify-content: space-between; }
+    .usage .kv .k { color: #6b7280; }
+    .usage .kv .v { font-weight: 600; color: #374151; }
+
+    a { color: #2563eb; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .tok-str { color: #b45309; }
+    .tok-com { color: #6b7280; font-style: italic; }
+    .tok-kw  { color: #2563eb; }
+    .tok-num { color: #7c3aed; }
+    .tok-line { display: block; line-height: 1.2; padding: 2px 6px; margin: 0; }
+    .tok-add  { color: #065f46; background: #ecfdf5; border-radius: 4px; }
+    .tok-del  { color: #991b1b; background: #fef2f2; border-radius: 4px; }
+    .tok-meta { color: #1f2937; background: #e5e7eb; border-radius: 4px; }
+
+    .hide-user .block.user { display: none; }
+    .hide-assistant .block.assistant { display: none; }
+    .hide-reasoning .block.reasoning { display: none; }
+    .hide-func-call .block.func-call { display: none; }
+    .hide-func-output .block.func-output { display: none; }
+    .hide-plan .block.plan { display: none; }
+    .hide-usage .block.usage { display: none; }
