@@ -61,8 +61,8 @@ Naming scheme uses migration-style timestamps with meaningful suffixes, for exam
 
 ## Live examples via GitHub Pages:
 
-https://jerometremblay.github.io/codex_log_viewer/
-https://jerometremblay.github.io/codex_log_viewer/codex_sessions/20260213134203_redacted_current_codex_session_jsonl_export.html
+ - https://jerometremblay.github.io/codex_log_viewer/
+ - https://jerometremblay.github.io/codex_log_viewer/codex_sessions/20260213134203_redacted_current_codex_session_jsonl_export.html
 
 
 ## License
