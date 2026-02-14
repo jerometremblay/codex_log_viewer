@@ -1,0 +1,4 @@
+interface:
+  display_name: "Conversation Log Export"
+  short_description: "Export current Codex conversation logs to clean JSONL/HTML"
+  default_prompt: "Export the current conversation log to project-local codex_sessions"

@@ -59,6 +59,31 @@ Naming scheme uses migration-style timestamps with meaningful suffixes, for exam
 - [`20260213134203_redacted_current_codex_session_jsonl_export.jsonl`](codex_sessions/20260213134203_redacted_current_codex_session_jsonl_export.jsonl)
 - [`20260213134203_redacted_current_codex_session_jsonl_export.html`](codex_sessions/20260213134203_redacted_current_codex_session_jsonl_export.html)
 
+## Skill Docs (`SKILL.md`)
+
+This repository includes a vendored Codex skill for conversation exports:
+- `skills/conversation-log-export/SKILL.md`
+
+What this file is:
+- The skill entrypoint documentation used by Codex to understand when and how to run the export workflow.
+- The source of truth for workflow steps, filtering rules, and command examples for the export script.
+
+Related files in the same skill:
+- `skills/conversation-log-export/scripts/export_current_conversation.py` (implementation)
+- `skills/conversation-log-export/agents/openai.yaml` (skill metadata for agent UI/default prompt)
+
+Current filtering behavior documented in `SKILL.md`:
+- Drops `session_meta` and `turn_context`.
+- Drops developer/system prompt `response_item` messages.
+- Drops mirrored chat `event_msg` rows (`user_message`, `agent_message`, `agent_reasoning`) to avoid duplicated conversation content.
+- Keeps non-chat runtime events (for example `task_started`, `token_count`).
+
+Run from this repository:
+
+```bash
+python3 skills/conversation-log-export/scripts/export_current_conversation.py --with-html
+```
+
 ## Live examples via GitHub Pages:
 
  - https://jerometremblay.github.io/codex_log_viewer/
