@@ -74,15 +74,24 @@ Related files in the same skill:
 - `skills/conversation-log-export/agents/openai.yaml` (skill metadata for agent UI/default prompt)
 
 Current filtering behavior documented in `SKILL.md`:
-- Drops `session_meta` and `turn_context`.
+- Drops `session_meta`, `turn_context`, `event_msg`, and `compacted`.
+- Drops `response_item` rows where `payload.type` is `reasoning` or `function_call_output`.
 - Drops developer/system prompt `response_item` messages.
-- Drops mirrored chat `event_msg` rows (`user_message`, `agent_message`, `agent_reasoning`) to avoid duplicated conversation content.
-- Keeps non-chat runtime events (for example `task_started`, `token_count`).
+- Drops bootstrap AGENTS directives injected as user messages (`# AGENTS.md instructions for ...` with `<INSTRUCTIONS>...</INSTRUCTIONS>`).
+- Default export filename is `<timestamp>_<goal-slug>.jsonl` (no `_conversation_only` suffix).
+- If exactly one commit message title is generated, its first line is used to derive `<goal-slug>`.
+- Supports selector overrides:
+  - `--include row:<type>,event:<type>,response:<type>,role:<role>`
+  - `--exclude row:<type>,event:<type>,response:<type>,role:<role>`
+  - `--list-types` to print observed selector values and default keep/drop status.
 
 Run from this repository:
 
 ```bash
 python3 skills/conversation-log-export/scripts/export_current_conversation.py --with-html
+python3 skills/conversation-log-export/scripts/export_current_conversation.py --list-types
+python3 skills/conversation-log-export/scripts/export_current_conversation.py --include row:event_msg,row:compacted
+python3 skills/conversation-log-export/scripts/export_current_conversation.py --include response:reasoning,response:function_call_output
 ```
 
 ## Live examples via GitHub Pages:

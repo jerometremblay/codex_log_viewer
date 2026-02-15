@@ -9,14 +9,12 @@
       --bg: #f6f8fa;
       --text: #1f2328;
       --muted: #59636e;
-      --card: #ffffff;
+      --surface: #ffffff;
       --border: #d0d7de;
       --link: #0969da;
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
@@ -41,32 +39,59 @@
       color: var(--muted);
     }
 
-    ul {
-      list-style: none;
-      padding: 0;
-      margin: 0;
-      display: grid;
-      gap: 12px;
-    }
-
-    li {
-      background: var(--card);
+    .table-wrap {
+      overflow-x: auto;
+      background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 10px;
-      padding: 14px 16px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 760px;
+    }
+
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.95rem;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      background: #f3f4f6;
+      font-weight: 600;
+      color: #1f2328;
+    }
+
+    tbody tr:last-child td {
+      border-bottom: none;
     }
 
     .name {
-      margin: 0 0 6px;
-      font-weight: 600;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
       word-break: break-word;
+    }
+
+    .name .base {
+      font-weight: 600;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 0.88rem;
     }
 
     .links {
       display: flex;
-      gap: 14px;
+      gap: 12px;
       flex-wrap: wrap;
-      font-size: 0.95rem;
     }
 
     a {
@@ -82,24 +107,66 @@
 <body>
   <main>
     <h1>Codex Session Exports</h1>
-    <p>Index of exported conversation sessions in this folder.</p>
+    <p>Index of exported conversation sessions in this folder. Newest entries are listed first.</p>
 
-    <ul>
-      <li>
-        <div class="name">20260213134203_redacted_current_codex_session_jsonl_export</div>
-        <div class="links">
-          <a href="./20260213134203_redacted_current_codex_session_jsonl_export.html">Open HTML</a>
-          <a href="./20260213134203_redacted_current_codex_session_jsonl_export.jsonl">Open JSONL</a>
-        </div>
-      </li>
-      <li>
-        <div class="name">20260214002446_in-the-json-i-have-doubles_conversation_only</div>
-        <div class="links">
-          <a href="./20260214002446_in-the-json-i-have-doubles_conversation_only.html">Open HTML</a>
-          <a href="./20260214002446_in-the-json-i-have-doubles_conversation_only.jsonl">Open JSONL</a>
-        </div>
-      </li>
-    </ul>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Session</th>
+            <th>Timestamp Prefix</th>
+            <th>Open</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <div class="name">
+                <span class="base">let-s-review-the-conversation-dump-skill</span>
+                <span class="muted">20260215143444_let-s-review-the-conversation-dump-skill</span>
+              </div>
+            </td>
+            <td><code>20260215143444</code></td>
+            <td>
+              <div class="links">
+                <a href="./20260215143444_let-s-review-the-conversation-dump-skill.html">Open HTML</a>
+                <a href="./20260215143444_let-s-review-the-conversation-dump-skill.jsonl">Open JSONL</a>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <div class="name">
+                <span class="base">in-the-json-i-have-doubles_conversation_only</span>
+                <span class="muted">20260214002446_in-the-json-i-have-doubles_conversation_only</span>
+              </div>
+            </td>
+            <td><code>20260214002446</code></td>
+            <td>
+              <div class="links">
+                <a href="./20260214002446_in-the-json-i-have-doubles_conversation_only.html">Open HTML</a>
+                <a href="./20260214002446_in-the-json-i-have-doubles_conversation_only.jsonl">Open JSONL</a>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <div class="name">
+                <span class="base">redacted_current_codex_session_jsonl_export</span>
+                <span class="muted">20260213134203_redacted_current_codex_session_jsonl_export</span>
+              </div>
+            </td>
+            <td><code>20260213134203</code></td>
+            <td>
+              <div class="links">
+                <a href="./20260213134203_redacted_current_codex_session_jsonl_export.html">Open HTML</a>
+                <a href="./20260213134203_redacted_current_codex_session_jsonl_export.jsonl">Open JSONL</a>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </main>
 </body>
 </html>

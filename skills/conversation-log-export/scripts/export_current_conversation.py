@@ -5,6 +5,7 @@ import json
 import re
 import sys
 import unicodedata
+from collections import defaultdict
 from pathlib import Path
 
 HTML_TEMPLATE = """<!DOCTYPE html>
@@ -31,7 +32,25 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 </html>
 """
 
-MIRRORED_CHAT_EVENT_TYPES = {"user_message", "agent_message", "agent_reasoning"}
+SELECTOR_PREFIXES = ("row", "event", "response", "role")
+COMMIT_TITLE_PATTERN = re.compile(
+    r"^(?:us-\d+|f-\d+|p-\d+|t-\d+|b-\d+|id:\d+)\b.+$",
+    re.IGNORECASE,
+)
+AGENTS_DIRECTIVE_HEADER_PATTERN = re.compile(
+    r"^\s*#\s*AGENTS\.md instructions for\b",
+    re.IGNORECASE,
+)
+DEFAULT_EXCLUDED_SELECTORS = {
+    "row:session_meta",
+    "row:turn_context",
+    "row:event_msg",
+    "row:compacted",
+    "response:reasoning",
+    "response:function_call_output",
+    "role:developer",
+    "role:system",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -44,11 +63,36 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output",
-        help="Output JSONL path. Defaults to <cwd>/codex_sessions/<timestamp>_<goal-slug>_conversation_only.jsonl",
+        help="Output JSONL path. Defaults to <cwd>/codex_sessions/<timestamp>_<goal-slug>.jsonl",
     )
     parser.add_argument(
         "--anchor-text",
         help="Start from nearest prior task_started before first user message containing this text.",
+    )
+    parser.add_argument(
+        "--include",
+        action="append",
+        default=[],
+        metavar="SELECTOR[,SELECTOR...]",
+        help=(
+            "Re-include filtered rows matching selectors. Repeatable and comma-separated. "
+            "Selector format: row:<type>, event:<type>, response:<type>, role:<role>."
+        ),
+    )
+    parser.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        metavar="SELECTOR[,SELECTOR...]",
+        help=(
+            "Exclude rows matching selectors. Repeatable and comma-separated. "
+            "Selector format: row:<type>, event:<type>, response:<type>, role:<role>."
+        ),
+    )
+    parser.add_argument(
+        "--list-types",
+        action="store_true",
+        help="Print observed selector values and their default keep/drop status, then exit.",
     )
     parser.add_argument(
         "--with-html",
@@ -118,6 +162,82 @@ def user_message_text(row: dict) -> str:
     return "\n".join(parts).strip()
 
 
+def is_agents_directive_text(text: str) -> bool:
+    if not text:
+        return False
+    stripped = text.strip()
+    if not AGENTS_DIRECTIVE_HEADER_PATTERN.search(stripped):
+        return False
+
+    lowered = stripped.lower()
+    return "<instructions>" in lowered and "</instructions>" in lowered
+
+
+def is_agents_directive_row(row: dict) -> bool:
+    if row.get("type") != "response_item":
+        return False
+    payload = row.get("payload", {})
+    if payload.get("type") != "message" or payload.get("role") != "user":
+        return False
+
+    return is_agents_directive_text(user_message_text(row))
+
+
+def assistant_message_text(row: dict) -> str:
+    if row.get("type") != "response_item":
+        return ""
+    payload = row.get("payload", {})
+    if payload.get("type") != "message" or payload.get("role") != "assistant":
+        return ""
+
+    parts = []
+    for item in payload.get("content", []):
+        if item.get("type") != "output_text":
+            continue
+        text = item.get("text", "").strip()
+        if text:
+            parts.append(text)
+    return "\n".join(parts).strip()
+
+
+def find_commit_titles_in_text(text: str) -> list[str]:
+    titles: list[str] = []
+    if not text:
+        return titles
+
+    code_blocks = re.findall(r"```(?:[^\n`]*)\n(.*?)```", text, flags=re.DOTALL)
+    for block in code_blocks:
+        lines = [line.strip() for line in block.splitlines() if line.strip()]
+        if lines and COMMIT_TITLE_PATTERN.match(lines[0]):
+            titles.append(lines[0])
+
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if lines and COMMIT_TITLE_PATTERN.match(lines[0]):
+        titles.append(lines[0])
+
+    return titles
+
+
+def generated_commit_message_title(rows: list[dict], start_idx: int) -> str | None:
+    ordered_unique_titles: list[str] = []
+    seen_titles: set[str] = set()
+
+    for row in rows[start_idx:]:
+        text = assistant_message_text(row)
+        if not text:
+            continue
+        for title in find_commit_titles_in_text(text):
+            normalized = title.lower()
+            if normalized in seen_titles:
+                continue
+            seen_titles.add(normalized)
+            ordered_unique_titles.append(title)
+
+    if len(ordered_unique_titles) == 1:
+        return ordered_unique_titles[0]
+    return None
+
+
 def resolve_start_index(rows: list[dict], anchor_text: str | None) -> int:
     if anchor_text:
         anchor_idx = next(
@@ -135,9 +255,13 @@ def resolve_start_index(rows: list[dict], anchor_text: str | None) -> int:
 
 
 def conversation_goal_text(rows: list[dict], start_idx: int) -> str:
+    commit_title = generated_commit_message_title(rows, start_idx)
+    if commit_title:
+        return commit_title
+
     for row in rows[start_idx:]:
         text = user_message_text(row)
-        if not text:
+        if not text or is_agents_directive_text(text):
             continue
         non_empty_lines = [line.strip() for line in text.splitlines() if line.strip()]
         if not non_empty_lines:
@@ -168,28 +292,142 @@ def default_output_path(rows: list[dict], start_idx: int) -> Path:
     goal_text = conversation_goal_text(rows, start_idx)
     goal_slug = slugify_goal(goal_text)
     prefix = timestamp_prefix(rows, start_idx)
-    basename = f"{goal_slug}_conversation_only.jsonl"
+    basename = f"{goal_slug}.jsonl"
     if prefix:
         basename = f"{prefix}_{basename}"
     return Path.cwd() / "codex_sessions" / basename
 
 
-def keep_row(row: dict) -> bool:
+def row_selectors(row: dict) -> set[str]:
+    selectors: set[str] = set()
     row_type = row.get("type")
-    if row_type in {"session_meta", "turn_context"}:
-        return False
+    if isinstance(row_type, str) and row_type:
+        normalized_row_type = row_type.lower()
+        selectors.add(f"row:{normalized_row_type}")
+    else:
+        return selectors
 
     if row_type == "event_msg":
-        payload_type = row.get("payload", {}).get("type")
-        if payload_type in MIRRORED_CHAT_EVENT_TYPES:
-            return False
+        payload = row.get("payload", {})
+        if isinstance(payload, dict):
+            payload_type = payload.get("type")
+            if isinstance(payload_type, str) and payload_type:
+                selectors.add(f"event:{payload_type.lower()}")
 
     if row_type == "response_item":
         payload = row.get("payload", {})
-        if payload.get("type") == "message" and payload.get("role") in {"developer", "system"}:
-            return False
+        if isinstance(payload, dict):
+            payload_type = payload.get("type")
+            if isinstance(payload_type, str) and payload_type:
+                normalized_payload_type = payload_type.lower()
+                selectors.add(f"response:{normalized_payload_type}")
+                if normalized_payload_type == "message":
+                    role = payload.get("role")
+                    if isinstance(role, str) and role:
+                        selectors.add(f"role:{role.lower()}")
 
-    return True
+    return selectors
+
+
+def keep_row_default(row: dict) -> bool:
+    if is_agents_directive_row(row):
+        return False
+
+    selectors = row_selectors(row)
+    return not any(selector in DEFAULT_EXCLUDED_SELECTORS for selector in selectors)
+
+
+def should_keep_row(
+    row: dict, include_selectors: set[str] | None = None, exclude_selectors: set[str] | None = None
+) -> bool:
+    include_selectors = include_selectors or set()
+    exclude_selectors = exclude_selectors or set()
+    selectors = row_selectors(row)
+    keep = keep_row_default(row)
+
+    if include_selectors and selectors.intersection(include_selectors):
+        keep = True
+
+    if selectors.intersection(exclude_selectors):
+        keep = False
+
+    return keep
+
+
+def normalize_selector(raw: str) -> str:
+    token = raw.strip()
+    if not token:
+        raise ValueError("Empty selector is not allowed.")
+
+    if ":" not in token:
+        raise ValueError(
+            f"Invalid selector '{raw}'. Expected '<prefix>:<value>' where prefix is one of: "
+            f"{', '.join(SELECTOR_PREFIXES)}."
+        )
+
+    prefix, value = token.split(":", 1)
+    prefix = prefix.strip().lower()
+    value = value.strip().lower()
+
+    if prefix not in SELECTOR_PREFIXES:
+        raise ValueError(
+            f"Invalid selector prefix '{prefix}' in '{raw}'. Allowed prefixes: "
+            f"{', '.join(SELECTOR_PREFIXES)}."
+        )
+    if not value:
+        raise ValueError(
+            f"Invalid selector '{raw}'. Missing value after ':'. Expected '<prefix>:<value>'."
+        )
+
+    return f"{prefix}:{value}"
+
+
+def parse_selector_args(raw_values: list[str] | None) -> set[str]:
+    selectors: set[str] = set()
+    for raw_group in raw_values or []:
+        for raw_selector in raw_group.split(","):
+            raw_selector = raw_selector.strip()
+            if not raw_selector:
+                continue
+            selectors.add(normalize_selector(raw_selector))
+    return selectors
+
+
+def collect_selector_values(rows: list[dict]) -> dict[str, set[str]]:
+    values: dict[str, set[str]] = defaultdict(set)
+    for row in rows:
+        for selector in row_selectors(row):
+            prefix, value = selector.split(":", 1)
+            values[prefix].add(value)
+
+    for selector in DEFAULT_EXCLUDED_SELECTORS:
+        prefix, value = selector.split(":", 1)
+        values[prefix].add(value)
+
+    for prefix in SELECTOR_PREFIXES:
+        values.setdefault(prefix, set())
+
+    return values
+
+
+def selector_default_status(selector: str) -> str:
+    if selector in DEFAULT_EXCLUDED_SELECTORS:
+        return "dropped"
+    prefix, _ = selector.split(":", 1)
+    if prefix == "event" and "row:event_msg" in DEFAULT_EXCLUDED_SELECTORS:
+        return "dropped"
+    return "kept"
+
+
+def print_selector_types(rows: list[dict]) -> None:
+    values = collect_selector_values(rows)
+    print("selector_types:")
+    for prefix in SELECTOR_PREFIXES:
+        print(f"{prefix}:")
+        for value in sorted(values[prefix]):
+            selector = f"{prefix}:{value}"
+            default_status = selector_default_status(selector)
+            print(f"  - {selector} (default: {default_status})")
 
 
 def write_jsonl(path: Path, rows: list[dict]) -> None:
@@ -214,6 +452,21 @@ def main() -> int:
 
     rows = load_rows(source)
     start_idx = resolve_start_index(rows, args.anchor_text)
+    scoped_rows = rows[start_idx:]
+
+    try:
+        include_selectors = parse_selector_args(args.include)
+        exclude_selectors = parse_selector_args(args.exclude)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    if args.list_types:
+        print(f"source: {source}")
+        print(f"start_index: {start_idx}")
+        print_selector_types(scoped_rows)
+        return 0
+
     goal_text = conversation_goal_text(rows, start_idx)
     goal_slug = slugify_goal(goal_text)
 
@@ -222,7 +475,9 @@ def main() -> int:
     else:
         output = default_output_path(rows, start_idx)
 
-    filtered = [row for row in rows[start_idx:] if keep_row(row)]
+    filtered = [
+        row for row in scoped_rows if should_keep_row(row, include_selectors, exclude_selectors)
+    ]
 
     write_jsonl(output, filtered)
 
