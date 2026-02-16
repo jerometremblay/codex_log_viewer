@@ -1,5 +1,6 @@
 import importlib.util
 from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
 
 
@@ -256,6 +257,56 @@ class ExportCurrentConversationFilterTests(unittest.TestCase):
             },
         ]
         self.assertEqual(MODULE.conversation_goal_text(rows, 0), "Actual user request")
+
+
+class ExportCurrentConversationIndexTests(unittest.TestCase):
+    def test_index_directory_for_output_prefers_output_parent_when_named_codex_sessions(self):
+        cwd = Path("/tmp/project")
+        output = Path("/tmp/project/codex_sessions/20260216155211_sample.jsonl")
+        self.assertEqual(MODULE.index_directory_for_output(output, cwd), output.parent)
+
+    def test_index_directory_for_output_defaults_to_cwd_codex_sessions(self):
+        cwd = Path("/tmp/project")
+        output = Path("/tmp/project/exports/20260216155211_sample.jsonl")
+        self.assertEqual(MODULE.index_directory_for_output(output, cwd), cwd / "codex_sessions")
+
+    def test_write_sessions_index_lists_newest_first_and_handles_missing_html(self):
+        with TemporaryDirectory() as temp_dir:
+            sessions_dir = Path(temp_dir) / "codex_sessions"
+            sessions_dir.mkdir(parents=True, exist_ok=True)
+
+            newer = sessions_dir / "20260216155211_new-session.jsonl"
+            older = sessions_dir / "20260213134203_old-session.jsonl"
+            newer.write_text('{"type":"response_item"}\n', encoding="utf-8")
+            older.write_text('{"type":"response_item"}\n', encoding="utf-8")
+            older.with_suffix(".html").write_text("<html></html>", encoding="utf-8")
+
+            index_path = MODULE.write_sessions_index(sessions_dir)
+            index_html = index_path.read_text(encoding="utf-8")
+
+            self.assertLess(
+                index_html.index("20260216155211_new-session"),
+                index_html.index("20260213134203_old-session"),
+            )
+            self.assertIn(
+                './20260213134203_old-session.html">Open HTML</a>',
+                index_html,
+            )
+            self.assertNotIn(
+                './20260216155211_new-session.html">Open HTML</a>',
+                index_html,
+            )
+            self.assertIn(
+                './20260216155211_new-session.jsonl">Open JSONL</a>',
+                index_html,
+            )
+
+    def test_write_sessions_index_handles_empty_sessions_directory(self):
+        with TemporaryDirectory() as temp_dir:
+            sessions_dir = Path(temp_dir) / "codex_sessions"
+            index_path = MODULE.write_sessions_index(sessions_dir)
+            index_html = index_path.read_text(encoding="utf-8")
+            self.assertIn("No session exports yet.", index_html)
 
 
 if __name__ == "__main__":

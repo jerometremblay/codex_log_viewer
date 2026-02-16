@@ -2,6 +2,15 @@
   "use strict";
 
   const FILTERS_KEY = "codex_viewer_filters_v1";
+  const FILTER_OPTIONS = Object.freeze([
+    { cls: "user", label: "User", chipClass: "chip-user", checked: true },
+    { cls: "assistant", label: "Assistant", chipClass: "chip-assistant", checked: true },
+    { cls: "reasoning", label: "Reasoning", chipClass: "chip-reasoning", checked: true },
+    { cls: "func-call", label: "Calls", chipClass: "chip-func-call", checked: true },
+    { cls: "func-output", label: "Outputs", chipClass: "chip-func-output", checked: true },
+    { cls: "plan", label: "Plans", chipClass: "chip-plan", checked: true },
+    { cls: "usage", label: "Token Usage", chipClass: "", checked: false },
+  ]);
   const DEFAULT_VIEWER_OPTIONS = Object.freeze({
     source: "example.jsonl",
     title: "Codex Session Log",
@@ -169,6 +178,14 @@
       <ul class='plan-list'>${items.join("")}</ul>
     </div>
     `;
+  }
+
+  function isPlanUpdateFunctionCall(entry) {
+    if (!entry || entry.name !== "update_plan") {
+      return false;
+    }
+    const [argsObj, ok] = parseJsonStringMaybe(entry.arguments);
+    return Boolean(ok && argsObj && typeof argsObj === "object" && !Array.isArray(argsObj));
   }
 
   function extractPatchFromCommand(cmd) {
@@ -357,20 +374,25 @@
     `;
   }
 
-  function renderToolbar(showTokenUsage) {
-    const usageChecked = showTokenUsage ? " checked" : "";
+  function renderToolbar(showTokenUsage, availableFilterClasses) {
+    const chips = FILTER_OPTIONS
+      .filter((option) => availableFilterClasses.has(option.cls))
+      .map((option) => {
+        const checked = option.cls === "usage" ? showTokenUsage : option.checked;
+        const checkedAttr = checked ? " checked" : "";
+        const chipClass = option.chipClass ? ` ${option.chipClass}` : "";
+        return `<label class='filter-chip${chipClass}'><input type='checkbox' data-class='${option.cls}'${checkedAttr} /> ${option.label}</label>`;
+      })
+      .join("");
+    const filtersHtml = chips ? `<div class='filters' title='Show/Hide blocks'>${chips}</div>` : "";
     return `
-    <div class='toolbar'>
-      <a href="#" id="collapse-all">Collapse All</a>
-      <a href="#" id="expand-all">Expand All</a>
-      <div class='filters' title='Show/Hide blocks'>
-        <label class='filter-chip chip-user'><input type='checkbox' data-class='user' checked /> User</label>
-        <label class='filter-chip chip-assistant'><input type='checkbox' data-class='assistant' checked /> Assistant</label>
-        <label class='filter-chip chip-reasoning'><input type='checkbox' data-class='reasoning' checked /> Reasoning</label>
-        <label class='filter-chip chip-func-call'><input type='checkbox' data-class='func-call' checked /> Calls</label>
-        <label class='filter-chip chip-func-output'><input type='checkbox' data-class='func-output' checked /> Outputs</label>
-        <label class='filter-chip chip-plan'><input type='checkbox' data-class='plan' checked /> Plans</label>
-        <label class='filter-chip'><input type='checkbox' data-class='usage'${usageChecked} /> Token Usage</label>
+    <div class='status-bar'>
+      <div class='status-bar-inner'>
+        <div class='status-actions'>
+          <a href="#" id="collapse-all" class="status-link">Collapse All</a>
+          <a href="#" id="expand-all" class="status-link">Expand All</a>
+        </div>
+        ${filtersHtml}
       </div>
     </div>
     `;
@@ -378,6 +400,7 @@
 
   function renderJsonl(jsonlText, sourcePath, options) {
     const blocks = [];
+    const availableFilterClasses = new Set();
     let sessionHeaderDone = false;
     let wrappedMode = null;
     const lines = jsonlText.split(/\r?\n/);
@@ -421,22 +444,35 @@
 
       const typ = entry.type;
       if (typ === "reasoning") {
+        availableFilterClasses.add("reasoning");
         blocks.push(renderReasoning(entry, tsInline));
       } else if (typ === "message") {
+        availableFilterClasses.add(entry.role === "user" ? "user" : "assistant");
         blocks.push(renderMessage(entry, tsInline));
       } else if (typ === "function_call") {
+        if (isPlanUpdateFunctionCall(entry)) {
+          availableFilterClasses.add("plan");
+        } else {
+          availableFilterClasses.add("func-call");
+        }
         blocks.push(renderFunctionCall(entry, tsInline));
       } else if (typ === "function_call_output") {
+        availableFilterClasses.add("func-output");
         blocks.push(renderFunctionOutput(entry, tsInline, options));
       } else if (typ === "user_message") {
+        availableFilterClasses.add("user");
         blocks.push(renderMessage({ role: "user", content: [{ type: "input_text", text: entry.message || "" }] }, tsInline));
       } else if (typ === "agent_message") {
+        availableFilterClasses.add("assistant");
         blocks.push(renderMessage({ role: "assistant", content: [{ type: "output_text", text: entry.message || "" }] }, tsInline));
       } else if (typ === "agent_reasoning") {
+        availableFilterClasses.add("reasoning");
         blocks.push(renderReasoning({ summary: [{ type: "summary_text", text: entry.text || "" }] }, tsInline));
       } else if (typ === "token_count") {
+        availableFilterClasses.add("usage");
         blocks.push(renderTokenUsage(entry, tsInline));
       } else {
+        availableFilterClasses.add("func-output");
         const eventLabel = typ || outerType || entry.record_type || "unknown";
         blocks.push(
           `<div class='block func-output'><div class='label'>Event: ${esc(String(eventLabel))}</div><pre class='code'>${esc(JSON.stringify(entry, null, 2))}</pre></div>`,
@@ -448,7 +484,7 @@
       blocks.push("<div class='session'><div class='title'>No events rendered</div><div class='subtitle'>The input file did not include renderable lines.</div></div>");
     }
 
-    return `${renderToolbar(options.showTokenUsage)}${blocks.filter(Boolean).join("")}`;
+    return `${renderToolbar(options.showTokenUsage, availableFilterClasses)}${blocks.filter(Boolean).join("")}`;
   }
 
   function setCollapsed(el, collapsed) {

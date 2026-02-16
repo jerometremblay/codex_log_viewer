@@ -33,6 +33,7 @@ Use `scripts/export_current_conversation.py` to generate a filtered conversation
 - Goal slug is derived from the first user request in the selected conversation window.
 - If exactly one commit message title is generated in assistant output (for example `us-123 ...`), its first line is used as the goal text for slug generation.
 - Use `--with-html` to create a matching HTML viewer file beside the JSONL.
+- Always regenerate `<cwd>/codex_sessions/index.html` (or the output folder if it is named `codex_sessions`) so the session index stays current.
 
 ## Commands
 

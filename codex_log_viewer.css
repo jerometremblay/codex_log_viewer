@@ -1,18 +1,46 @@
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; background: #ffffff; color: #1f2937; }
     body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Noto Sans, Ubuntu, Cantarell, 'Helvetica Neue', Arial, 'Apple Color Emoji', 'Segoe UI Emoji'; line-height: 1.5; }
-    .container { max-width: 920px; margin: 0 auto; padding: 24px 16px 80px; }
+    .container {
+      --container-pad-x: 16px;
+      --container-pad-top: 24px;
+      max-width: 920px;
+      margin: 0 auto;
+      padding: var(--container-pad-top) var(--container-pad-x) 80px;
+    }
     .session { background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; margin-bottom: 20px; }
     .session .title { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
     .session .subtitle { color: #6b7280; margin-bottom: 8px; font-size: 13px; }
     .session .header-row { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px; }
 
-    .toolbar { display: flex; gap: 10px; align-items: center; margin: 12px 0 18px; font-size: 13px; }
-    .toolbar a { color: #374151; background: #f3f4f6; border: 1px solid #e5e7eb; padding: 6px 10px; border-radius: 8px; text-decoration: none; }
-    .toolbar a:hover { background: #eef2ff; border-color: #dbeafe; color: #1d4ed8; }
-    .filters { display: inline-flex; gap: 8px; flex-wrap: wrap; margin-left: 12px; }
+    .status-bar {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      margin: calc(-1 * var(--container-pad-top)) calc(50% - 50vw) 18px;
+      padding: 10px 0;
+      background: rgba(255, 255, 255, 0.95);
+      border-bottom: 1px solid #e5e7eb;
+      backdrop-filter: blur(8px);
+    }
+    .status-bar-inner {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 0 var(--container-pad-x);
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+    .status-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .status-link { color: #374151; background: #f3f4f6; border: 1px solid #e5e7eb; padding: 6px 10px; border-radius: 8px; text-decoration: none; font-size: 13px; }
+    .status-link:hover { background: #eef2ff; border-color: #dbeafe; color: #1d4ed8; }
+    .filters { display: inline-flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
     .filter-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 8px; border: 1px solid #e5e7eb; background: #f9fafb; color: #111827; cursor: pointer; user-select: none; }
     .filter-chip input { accent-color: #2563eb; }
+    @media (max-width: 900px) {
+      .status-bar-inner { flex-direction: column; }
+      .filters { margin-left: 0; }
+    }
     .chip-user { background: #e8f0fe; border-color: #d2e3fc; }
     .chip-assistant { background: #e6f4ea; border-color: #ccead6; }
     .chip-reasoning { background: #f3e8ff; border-color: #e9d5ff; }

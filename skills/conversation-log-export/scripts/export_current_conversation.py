@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import html
 import json
 import re
 import sys
@@ -51,6 +52,7 @@ DEFAULT_EXCLUDED_SELECTORS = {
     "role:developer",
     "role:system",
 }
+SESSION_STEM_PATTERN = re.compile(r"^(?P<prefix>\d{14})_(?P<slug>.+)$")
 
 
 def parse_args() -> argparse.Namespace:
@@ -442,6 +444,232 @@ def write_html(path: Path, jsonl_name: str, title: str) -> None:
     path.write_text(html_text, encoding="utf-8")
 
 
+def index_directory_for_output(output: Path, cwd: Path | None = None) -> Path:
+    base_dir = cwd or Path.cwd()
+    if output.parent.name == "codex_sessions":
+        return output.parent
+    return base_dir / "codex_sessions"
+
+
+def parse_session_stem(stem: str) -> tuple[str, str]:
+    match = SESSION_STEM_PATTERN.match(stem)
+    if not match:
+        return "", stem
+    return match.group("prefix"), match.group("slug")
+
+
+def collect_session_entries(codex_sessions_dir: Path) -> list[dict]:
+    entries: list[dict] = []
+    for jsonl_path in codex_sessions_dir.glob("*.jsonl"):
+        prefix, slug = parse_session_stem(jsonl_path.stem)
+        html_path = jsonl_path.with_suffix(".html")
+        entries.append(
+            {
+                "stem": jsonl_path.stem,
+                "slug": slug,
+                "prefix": prefix,
+                "jsonl_name": jsonl_path.name,
+                "html_name": html_path.name,
+                "has_html": html_path.exists(),
+                "mtime": jsonl_path.stat().st_mtime,
+            }
+        )
+
+    entries.sort(
+        key=lambda item: (
+            bool(item["prefix"]),
+            item["prefix"],
+            item["mtime"],
+            item["stem"],
+        ),
+        reverse=True,
+    )
+    return entries
+
+
+def render_sessions_index(entries: list[dict]) -> str:
+    row_blocks = []
+    if not entries:
+        row_blocks.append(
+            """
+          <tr>
+            <td colspan="3"><span class="muted">No session exports yet.</span></td>
+          </tr>
+            """.rstrip()
+        )
+
+    for entry in entries:
+        stem = html.escape(str(entry["stem"]))
+        base = html.escape(str(entry["slug"]))
+        prefix = str(entry["prefix"])
+        prefix_cell = f"<code>{html.escape(prefix)}</code>" if prefix else '<span class="muted">-</span>'
+
+        links = []
+        if entry["has_html"]:
+            links.append(
+                f'<a href="./{html.escape(str(entry["html_name"]))}">Open HTML</a>'
+            )
+        links.append(f'<a href="./{html.escape(str(entry["jsonl_name"]))}">Open JSONL</a>')
+
+        row_blocks.append(
+            f"""
+          <tr>
+            <td>
+              <div class="name">
+                <span class="base">{base}</span>
+                <span class="muted">{stem}</span>
+              </div>
+            </td>
+            <td>{prefix_cell}</td>
+            <td>
+              <div class="links">
+                {' '.join(links)}
+              </div>
+            </td>
+          </tr>
+            """.rstrip()
+        )
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Codex Session Exports</title>
+  <style>
+    :root {{
+      --bg: #f6f8fa;
+      --text: #1f2328;
+      --muted: #59636e;
+      --surface: #ffffff;
+      --border: #d0d7de;
+      --link: #0969da;
+    }}
+
+    * {{ box-sizing: border-box; }}
+
+    body {{
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }}
+
+    main {{
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 32px 20px 56px;
+    }}
+
+    h1 {{
+      margin: 0 0 8px;
+      font-size: 2rem;
+    }}
+
+    p {{
+      margin: 0 0 24px;
+      color: var(--muted);
+    }}
+
+    .table-wrap {{
+      overflow-x: auto;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }}
+
+    table {{
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 760px;
+    }}
+
+    th, td {{
+      text-align: left;
+      vertical-align: top;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.95rem;
+    }}
+
+    th {{
+      position: sticky;
+      top: 0;
+      background: #f3f4f6;
+      font-weight: 600;
+      color: #1f2328;
+    }}
+
+    tbody tr:last-child td {{
+      border-bottom: none;
+    }}
+
+    .name {{
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      word-break: break-word;
+    }}
+
+    .name .base {{
+      font-weight: 600;
+    }}
+
+    .muted {{
+      color: var(--muted);
+      font-size: 0.88rem;
+    }}
+
+    .links {{
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }}
+
+    a {{
+      color: var(--link);
+      text-decoration: none;
+    }}
+
+    a:hover {{
+      text-decoration: underline;
+    }}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Codex Session Exports</h1>
+    <p>Index of exported conversation sessions in this folder. Newest entries are listed first.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Session</th>
+            <th>Timestamp Prefix</th>
+            <th>Open</th>
+          </tr>
+        </thead>
+        <tbody>
+{''.join(row_blocks)}
+        </tbody>
+      </table>
+    </div>
+  </main>
+</body>
+</html>
+"""
+
+
+def write_sessions_index(codex_sessions_dir: Path) -> Path:
+    codex_sessions_dir.mkdir(parents=True, exist_ok=True)
+    entries = collect_session_entries(codex_sessions_dir)
+    index_html = render_sessions_index(entries)
+    index_path = codex_sessions_dir / "index.html"
+    index_path.write_text(index_html, encoding="utf-8")
+    return index_path
+
+
 def main() -> int:
     args = parse_args()
 
@@ -481,17 +709,23 @@ def main() -> int:
 
     write_jsonl(output, filtered)
 
+    html_path = None
+    if args.with_html:
+        html_path = output.with_suffix(".html")
+        write_html(html_path, output.name, f"Codex Conversation Log - {goal_text}")
+
+    index_dir = index_directory_for_output(output)
+    index_path = write_sessions_index(index_dir)
+
     print(f"source: {source}")
     print(f"output: {output}")
     print(f"rows: {len(rows)} -> {len(filtered)}")
     print(f"start_index: {start_idx}")
     print(f"goal: {goal_text}")
     print(f"goal_slug: {goal_slug}")
-
-    if args.with_html:
-        html_path = output.with_suffix(".html")
-        write_html(html_path, output.name, f"Codex Conversation Log - {goal_text}")
+    if html_path is not None:
         print(f"html: {html_path}")
+    print(f"index: {index_path}")
 
     return 0
 

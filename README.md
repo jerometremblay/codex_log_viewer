@@ -84,6 +84,7 @@ Current filtering behavior documented in `SKILL.md`:
   - `--include row:<type>,event:<type>,response:<type>,role:<role>`
   - `--exclude row:<type>,event:<type>,response:<type>,role:<role>`
   - `--list-types` to print observed selector values and default keep/drop status.
+- Each export run refreshes `codex_sessions/index.html` so new sessions appear automatically.
 
 Run from this repository:
 
