@@ -18,6 +18,11 @@
     collapseOutputLineThreshold: 300,
     showTokenUsage: false,
   });
+  const TOKEN_PRICE_INPUT_PER_1M = 1.75;
+  const TOKEN_PRICE_OUTPUT_PER_1M = 14.0;
+  const TOKEN_PRICE_INPUT_PER_TOKEN = TOKEN_PRICE_INPUT_PER_1M / 1_000_000;
+  const TOKEN_PRICE_OUTPUT_PER_TOKEN = TOKEN_PRICE_OUTPUT_PER_1M / 1_000_000;
+  const DEFAULT_SHOW_CUMULATIVE_COST_OVERLAY = true;
   let mdRenderer = null;
   let interactionsBound = false;
 
@@ -398,12 +403,189 @@
     `;
   }
 
+  function readTokenMetrics(entry) {
+    const info = (entry && entry.info) || {};
+    const last = info.last_token_usage || {};
+    const total = info.total_token_usage || {};
+    const inputTokens = Number(last.input_tokens);
+    const outputTokens = Number(last.output_tokens);
+    if (!Number.isFinite(inputTokens) || !Number.isFinite(outputTokens)) {
+      return null;
+    }
+    const turnPriceUsd = (inputTokens * TOKEN_PRICE_INPUT_PER_TOKEN) + (outputTokens * TOKEN_PRICE_OUTPUT_PER_TOKEN);
+
+    const totalInputTokens = Number(total.input_tokens);
+    const totalOutputTokens = Number(total.output_tokens);
+    const cumulativePriceUsd =
+      Number.isFinite(totalInputTokens) && Number.isFinite(totalOutputTokens)
+        ? (totalInputTokens * TOKEN_PRICE_INPUT_PER_TOKEN) + (totalOutputTokens * TOKEN_PRICE_OUTPUT_PER_TOKEN)
+        : null;
+
+    return { inputTokens, outputTokens, turnPriceUsd, cumulativePriceUsd };
+  }
+
+  // Creates two SVG charts: tokens (left) and price (right), both over conversation progress.
+  function createTokenUsageSvg(points, showCumulativeCostOverlay, userInterventionProgress) {
+    if (!Array.isArray(points) || points.length < 2) {
+      return "";
+    }
+
+    const width = 440;
+    const height = 220;
+    const m = { top: 18, right: 16, bottom: 42, left: 58 };
+    const plotW = width - m.left - m.right;
+    const plotH = height - m.top - m.bottom;
+    if (plotW <= 0 || plotH <= 0) {
+      return "";
+    }
+
+    const tokenMinY = 0;
+    const tokenMaxY = Math.max(
+      1,
+      ...points.map((p) => Math.max(p.inputTokens, p.outputTokens)),
+    );
+    const tokenSpan = Math.max(1, tokenMaxY - tokenMinY);
+
+    const hasCumulativeData = points.some((p) => Number.isFinite(p.cumulativePriceUsd));
+    const priceMinY = 0;
+    const turnPriceMaxY = Math.max(0.0001, ...points.map((p) => p.turnPriceUsd));
+    const turnPriceSpan = Math.max(0.0001, turnPriceMaxY - priceMinY);
+    const combinedPriceMaxY = hasCumulativeData
+      ? Math.max(
+        turnPriceMaxY,
+        ...points
+          .map((p) => p.cumulativePriceUsd)
+          .filter((value) => Number.isFinite(value)),
+      )
+      : turnPriceMaxY;
+    const combinedPriceSpan = Math.max(0.0001, combinedPriceMaxY - priceMinY);
+    const interventionProgressValues = Array.isArray(userInterventionProgress)
+      ? userInterventionProgress
+      : [];
+    const minProgress = Math.min(
+      ...points.map((p) => p.progress),
+      ...(interventionProgressValues.length ? interventionProgressValues : [points[0].progress]),
+    );
+    const maxProgress = Math.max(
+      ...points.map((p) => p.progress),
+      ...(interventionProgressValues.length ? interventionProgressValues : [points[points.length - 1].progress]),
+    );
+    const progressSpan = Math.max(1, maxProgress - minProgress);
+
+    const xPx = (progress) => m.left + ((progress - minProgress) / progressSpan) * plotW;
+    const yTokenPx = (value) => m.top + (1 - (value - tokenMinY) / tokenSpan) * plotH;
+    const yPriceTurnPx = (value) => m.top + (1 - (value - priceMinY) / turnPriceSpan) * plotH;
+    const yPriceCombinedPx = (value) => m.top + (1 - (value - priceMinY) / combinedPriceSpan) * plotH;
+
+    const buildPath = (valueGetter, yPx) => points
+      .map((p, idx) => `${idx === 0 ? "M" : "L"}${xPx(p.progress).toFixed(2)} ${yPx(valueGetter(p)).toFixed(2)}`)
+      .join(" ");
+
+    const inputPath = buildPath((p) => p.inputTokens, yTokenPx);
+    const outputPath = buildPath((p) => p.outputTokens, yTokenPx);
+    const pricePathTurnScale = buildPath((p) => p.turnPriceUsd, yPriceTurnPx);
+    const pricePathCombinedScale = buildPath((p) => p.turnPriceUsd, yPriceCombinedPx);
+    const cumulativePricePathCombinedScale = hasCumulativeData
+      ? buildPath(
+        (p) => (Number.isFinite(p.cumulativePriceUsd) ? p.cumulativePriceUsd : p.turnPriceUsd),
+        yPriceCombinedPx,
+      )
+      : "";
+
+    const firstLabel = prettyTimestamp(points[0].ts) || "Start";
+    const lastLabel = prettyTimestamp(points[points.length - 1].ts) || "End";
+    const yTicks = 4;
+
+    const renderGridAndTicks = (maxY, span, isCurrency = false) => {
+      const parts = [];
+      for (let i = 0; i <= yTicks; i += 1) {
+        const y = m.top + (i / yTicks) * plotH;
+        const tickValue = maxY - (i / yTicks) * span;
+        const tickText = isCurrency
+          ? (tickValue >= 1 ? `$${tickValue.toFixed(2)}` : `$${tickValue.toFixed(4)}`)
+          : Math.round(tickValue).toLocaleString();
+        parts.push(`<line x1="${m.left}" y1="${y.toFixed(2)}" x2="${(width - m.right).toFixed(2)}" y2="${y.toFixed(2)}" class="token-chart-grid"/>`);
+        parts.push(`<text x="${(m.left - 10).toFixed(2)}" y="${(y + 4).toFixed(2)}" text-anchor="end" class="token-chart-tick">${esc(tickText)}</text>`);
+      }
+      return parts.join("");
+    };
+
+    const tokenGrid = renderGridAndTicks(tokenMaxY, tokenSpan, false);
+    const turnPriceGrid = renderGridAndTicks(turnPriceMaxY, turnPriceSpan, true);
+    const combinedPriceGrid = renderGridAndTicks(combinedPriceMaxY, combinedPriceSpan, true);
+    const interventionLines = [...new Set(interventionProgressValues)]
+      .map((progress) => {
+        const x = xPx(progress);
+        if (x < m.left || x > (width - m.right)) {
+          return "";
+        }
+        return `<line x1="${x.toFixed(2)}" y1="${m.top}" x2="${x.toFixed(2)}" y2="${(height - m.bottom).toFixed(2)}" class="token-chart-intervention"/>`;
+      })
+      .filter(Boolean)
+      .join("");
+
+    const renderPriceSvg = (gridHtml, turnPath, includeCumulative, ariaLabel, modeClass) => `
+          <svg class="token-chart-svg ${modeClass}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(ariaLabel)}">
+            <rect x="0" y="0" width="${width}" height="${height}" class="token-chart-bg"/>
+            ${gridHtml}
+            ${interventionLines}
+            <line x1="${m.left}" y1="${(height - m.bottom).toFixed(2)}" x2="${(width - m.right).toFixed(2)}" y2="${(height - m.bottom).toFixed(2)}" class="token-chart-axis"/>
+            <line x1="${m.left}" y1="${m.top}" x2="${m.left}" y2="${(height - m.bottom).toFixed(2)}" class="token-chart-axis"/>
+            ${includeCumulative ? `<path d="${cumulativePricePathCombinedScale}" class="token-chart-line token-chart-line-price-cumulative"/>` : ""}
+            <path d="${turnPath}" class="token-chart-line token-chart-line-price"/>
+            <text x="${(m.left + plotW / 2).toFixed(2)}" y="${(height - 10).toFixed(2)}" text-anchor="middle" class="token-chart-label">Conversation progress</text>
+            <text x="16" y="${(m.top + plotH / 2).toFixed(2)}" text-anchor="middle" transform="rotate(-90 16 ${(m.top + plotH / 2).toFixed(2)})" class="token-chart-label">USD</text>
+            <text x="${m.left}" y="${(height - m.bottom + 18).toFixed(2)}" text-anchor="start" class="token-chart-tick">${esc(firstLabel)}</text>
+            <text x="${(width - m.right).toFixed(2)}" y="${(height - m.bottom + 18).toFixed(2)}" text-anchor="end" class="token-chart-tick">${esc(lastLabel)}</text>
+          </svg>
+    `;
+
+    return `
+    <section class="token-chart-panel${showCumulativeCostOverlay ? "" : " hide-cumulative-cost-overlay"}">
+      <div class="token-chart-title">Token Usage Progress</div>
+      <div class="token-chart-legend">
+        <span class="token-chart-key token-chart-key-input">Input tokens</span>
+        <span class="token-chart-key token-chart-key-output">Output tokens</span>
+        <span class="token-chart-key token-chart-key-price">Turn cost (USD)</span>
+        ${hasCumulativeData ? `<label class="token-chart-key token-chart-key-price-cumulative token-chart-key-toggle"><input type="checkbox" data-role="toggle-cumulative-cost"${showCumulativeCostOverlay ? " checked" : ""} /> Cumulative cost (USD)</label>` : ""}
+        <span class="token-chart-rates">Rates: input $${TOKEN_PRICE_INPUT_PER_1M.toFixed(2)}/1M, output $${TOKEN_PRICE_OUTPUT_PER_1M.toFixed(2)}/1M</span>
+      </div>
+      <div class="token-chart-grid-layout">
+        <div class="token-chart-card">
+          <div class="token-chart-card-title">Tokens (Left)</div>
+          <svg class="token-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Input and output token counts over conversation progress">
+            <rect x="0" y="0" width="${width}" height="${height}" class="token-chart-bg"/>
+            ${tokenGrid}
+            ${interventionLines}
+            <line x1="${m.left}" y1="${(height - m.bottom).toFixed(2)}" x2="${(width - m.right).toFixed(2)}" y2="${(height - m.bottom).toFixed(2)}" class="token-chart-axis"/>
+            <line x1="${m.left}" y1="${m.top}" x2="${m.left}" y2="${(height - m.bottom).toFixed(2)}" class="token-chart-axis"/>
+            <path d="${inputPath}" class="token-chart-line token-chart-line-input"/>
+            <path d="${outputPath}" class="token-chart-line token-chart-line-output"/>
+            <text x="${(m.left + plotW / 2).toFixed(2)}" y="${(height - 10).toFixed(2)}" text-anchor="middle" class="token-chart-label">Conversation progress</text>
+            <text x="16" y="${(m.top + plotH / 2).toFixed(2)}" text-anchor="middle" transform="rotate(-90 16 ${(m.top + plotH / 2).toFixed(2)})" class="token-chart-label">Tokens</text>
+            <text x="${m.left}" y="${(height - m.bottom + 18).toFixed(2)}" text-anchor="start" class="token-chart-tick">${esc(firstLabel)}</text>
+            <text x="${(width - m.right).toFixed(2)}" y="${(height - m.bottom + 18).toFixed(2)}" text-anchor="end" class="token-chart-tick">${esc(lastLabel)}</text>
+          </svg>
+        </div>
+        <div class="token-chart-card">
+          <div class="token-chart-card-title">Price (Right)</div>
+          ${renderPriceSvg(turnPriceGrid, pricePathTurnScale, false, "Per-turn token price over conversation progress", "price-mode-turn")}
+          ${renderPriceSvg(combinedPriceGrid, pricePathCombinedScale, hasCumulativeData, "Per-turn and cumulative token price over conversation progress", "price-mode-combined")}
+        </div>
+      </div>
+    </section>
+    `;
+  }
+
   function renderJsonl(jsonlText, sourcePath, options) {
     const blocks = [];
     const availableFilterClasses = new Set();
+    const tokenSeries = [];
+    const userInterventionProgress = [];
     let sessionHeaderDone = false;
     let wrappedMode = null;
     const lines = jsonlText.split(/\r?\n/);
+    let progress = 0;
 
     for (const lineRaw of lines) {
       const line = lineRaw.trim();
@@ -428,12 +610,17 @@
       let entry;
       let outerType = null;
       let tsInline = "";
+      let tsRaw = "";
+      const currentProgress = progress;
+      progress += 1;
       if (wrappedMode) {
         outerType = rawObj.type || null;
         entry = rawObj.payload || {};
         tsInline = buildTimestampInline(rawObj.timestamp);
+        tsRaw = rawObj.timestamp || "";
       } else {
         entry = rawObj;
+        tsRaw = entry.timestamp || "";
       }
 
       if (!sessionHeaderDone && (entry.timestamp || entry.git || entry.instructions)) {
@@ -447,6 +634,9 @@
         availableFilterClasses.add("reasoning");
         blocks.push(renderReasoning(entry, tsInline));
       } else if (typ === "message") {
+        if (entry.role === "user") {
+          userInterventionProgress.push(currentProgress);
+        }
         availableFilterClasses.add(entry.role === "user" ? "user" : "assistant");
         blocks.push(renderMessage(entry, tsInline));
       } else if (typ === "function_call") {
@@ -460,6 +650,7 @@
         availableFilterClasses.add("func-output");
         blocks.push(renderFunctionOutput(entry, tsInline, options));
       } else if (typ === "user_message") {
+        userInterventionProgress.push(currentProgress);
         availableFilterClasses.add("user");
         blocks.push(renderMessage({ role: "user", content: [{ type: "input_text", text: entry.message || "" }] }, tsInline));
       } else if (typ === "agent_message") {
@@ -470,6 +661,10 @@
         blocks.push(renderReasoning({ summary: [{ type: "summary_text", text: entry.text || "" }] }, tsInline));
       } else if (typ === "token_count") {
         availableFilterClasses.add("usage");
+        const metrics = readTokenMetrics(entry);
+        if (metrics !== null) {
+          tokenSeries.push({ ts: tsRaw, progress: currentProgress, ...metrics });
+        }
         blocks.push(renderTokenUsage(entry, tsInline));
       } else {
         availableFilterClasses.add("func-output");
@@ -484,7 +679,12 @@
       blocks.push("<div class='session'><div class='title'>No events rendered</div><div class='subtitle'>The input file did not include renderable lines.</div></div>");
     }
 
-    return `${renderToolbar(options.showTokenUsage, availableFilterClasses)}${blocks.filter(Boolean).join("")}`;
+    const chartHtml = createTokenUsageSvg(
+      tokenSeries,
+      options.showCumulativeCostOverlay,
+      userInterventionProgress,
+    );
+    return `${chartHtml}${renderToolbar(options.showTokenUsage, availableFilterClasses)}${blocks.filter(Boolean).join("")}`;
   }
 
   function setCollapsed(el, collapsed) {
@@ -548,10 +748,10 @@
       if (!cls) {
         continue;
       }
-      if (state && Object.prototype.hasOwnProperty.call(state, cls)) {
-        cb.checked = Boolean(state[cls]);
-      } else if (cls === "usage") {
+      if (cls === "usage") {
         cb.checked = Boolean(defaultUsageVisible);
+      } else if (state && Object.prototype.hasOwnProperty.call(state, cls)) {
+        cb.checked = Boolean(state[cls]);
       }
     }
   }
@@ -700,6 +900,15 @@
       );
 
       document.addEventListener("change", (ev) => {
+        const cumulativeToggle = ev.target && ev.target.closest && ev.target.closest("input[data-role='toggle-cumulative-cost']");
+        if (cumulativeToggle) {
+          const panel = cumulativeToggle.closest(".token-chart-panel");
+          if (panel) {
+            panel.classList.toggle("hide-cumulative-cost-overlay", !cumulativeToggle.checked);
+          }
+          return;
+        }
+
         const cb = ev.target && ev.target.closest && ev.target.closest(".filters input[type='checkbox'][data-class]");
         if (!cb) {
           return;
@@ -818,6 +1027,10 @@
     ).trim();
     const titlePrefix = String(params.get("title") || DEFAULT_VIEWER_OPTIONS.title).trim() || DEFAULT_VIEWER_OPTIONS.title;
     const showTokenUsage = toBoolean(params.get("showTokenUsage"), DEFAULT_VIEWER_OPTIONS.showTokenUsage);
+    const showCumulativeCostOverlay = toBoolean(
+      params.get("showCumulativeCostOverlay"),
+      DEFAULT_SHOW_CUMULATIVE_COST_OVERLAY,
+    );
     const collapseOutputCharThreshold = Math.max(
       1,
       Math.floor(toNumber(params.get("collapseOutputCharThreshold"), DEFAULT_VIEWER_OPTIONS.collapseOutputCharThreshold)),
@@ -859,6 +1072,7 @@
         collapseOutputCharThreshold,
         collapseOutputLineThreshold,
         showTokenUsage,
+        showCumulativeCostOverlay,
       };
       app.innerHTML = renderJsonl(jsonlText, sourceRef, options);
       bindInteractions(showTokenUsage);

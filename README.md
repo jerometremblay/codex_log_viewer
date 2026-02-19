@@ -47,6 +47,7 @@ http://localhost:8000/codex_log_viewer.html?source=example.jsonl&collapseOutputC
 
 Notes:
 - `source` is resolved relative to `codex_log_viewer.html`.
+- Token usage blocks are hidden by default on initial page load; use the `Token Usage` filter checkbox (or `showTokenUsage=true`) to show them.
 - If loaded from `file://`, fetch may be blocked by browser security. Serve via HTTP.
 - If the HTML contains embedded inline session data, the viewer can render even when source fetch fails.
 
@@ -75,6 +76,7 @@ Related files in the same skill:
 
 Current filtering behavior documented in `SKILL.md`:
 - Drops `session_meta`, `turn_context`, `event_msg`, and `compacted`.
+- Keeps `event_msg` rows where `payload.type` is `token_count`.
 - Drops `response_item` rows where `payload.type` is `reasoning` or `function_call_output`.
 - Drops developer/system prompt `response_item` messages.
 - Drops bootstrap AGENTS directives injected as user messages (`# AGENTS.md instructions for ...` with `<INSTRUCTIONS>...</INSTRUCTIONS>`).

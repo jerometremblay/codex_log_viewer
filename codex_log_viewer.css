@@ -13,6 +13,130 @@
     .session .subtitle { color: #6b7280; margin-bottom: 8px; font-size: 13px; }
     .session .header-row { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px; }
 
+    .token-chart-panel {
+      background: #f8fafc;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 16px;
+    }
+    .token-chart-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #1f2937;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+    .token-chart-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      align-items: center;
+      margin-bottom: 8px;
+      font-size: 12px;
+      color: #374151;
+    }
+    .token-chart-key {
+      position: relative;
+      padding-left: 14px;
+      font-weight: 600;
+    }
+    .token-chart-key::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 50%;
+      width: 10px;
+      height: 2px;
+      transform: translateY(-50%);
+      border-radius: 2px;
+      background: currentColor;
+    }
+    .token-chart-key-input { color: #2563eb; }
+    .token-chart-key-output { color: #d97706; }
+    .token-chart-key-price { color: #059669; }
+    .token-chart-key-price-cumulative { color: #0f766e; }
+    .token-chart-key-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      user-select: none;
+    }
+    .token-chart-key-toggle input { accent-color: #0f766e; }
+    .token-chart-key-toggle input:focus-visible {
+      outline: 2px solid #99f6e4;
+      outline-offset: 1px;
+    }
+    .token-chart-rates { color: #6b7280; }
+    .token-chart-grid-layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .token-chart-card {
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 8px;
+    }
+    .token-chart-card-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #374151;
+      margin: 0 0 6px;
+    }
+    .token-chart-svg {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    .token-chart-svg.price-mode-turn { display: none; }
+    .token-chart-svg.price-mode-combined { display: block; }
+    .token-chart-bg { fill: #ffffff; }
+    .token-chart-grid {
+      stroke: #e5e7eb;
+      stroke-width: 1;
+      shape-rendering: crispEdges;
+    }
+    .token-chart-axis {
+      stroke: #9ca3af;
+      stroke-width: 1.2;
+      shape-rendering: crispEdges;
+    }
+    .token-chart-line {
+      fill: none;
+      stroke-width: 2.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .token-chart-line-input { stroke: #2563eb; }
+    .token-chart-line-output { stroke: #d97706; }
+    .token-chart-line-price { stroke: #059669; stroke-dasharray: 5 4; }
+    .token-chart-line-price-cumulative { stroke: #0f766e; stroke-dasharray: 2 3; stroke-width: 1.8; }
+    .token-chart-intervention {
+      stroke: #64748b;
+      stroke-width: 1;
+      stroke-dasharray: 3 3;
+      opacity: 0.5;
+    }
+    .token-chart-panel.hide-cumulative-cost-overlay .token-chart-line-price-cumulative { display: none; }
+    .token-chart-panel.hide-cumulative-cost-overlay .token-chart-svg.price-mode-turn { display: block; }
+    .token-chart-panel.hide-cumulative-cost-overlay .token-chart-svg.price-mode-combined { display: none; }
+    .token-chart-label {
+      fill: #374151;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .token-chart-tick {
+      fill: #6b7280;
+      font-size: 11px;
+    }
+    @media (max-width: 900px) {
+      .token-chart-grid-layout { grid-template-columns: 1fr; }
+    }
+
     .status-bar {
       position: sticky;
       top: 0;
