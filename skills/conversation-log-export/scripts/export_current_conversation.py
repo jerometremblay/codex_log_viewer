@@ -4,6 +4,7 @@ import argparse
 import html
 import json
 import re
+import shutil
 import sys
 import unicodedata
 from collections import defaultdict
@@ -16,9 +17,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
   <meta name=\"codex-log-source\" content=\"{jsonl_name}\" />
   <title>{title}</title>
-  <link rel=\"stylesheet\" href=\"https://jerometremblay.github.io/codex_log_viewer/codex_log_viewer.css\" />
+  <link rel=\"stylesheet\" href=\"{css_href}\" />
   <script defer src=\"https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js\"></script>
-  <script defer src=\"https://jerometremblay.github.io/codex_log_viewer/codex_log_viewer.js\"></script>
+  <script defer src=\"{js_href}\"></script>
 </head>
 <body>
   <div class=\"container\">
@@ -32,6 +33,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 </body>
 </html>
 """
+ONLINE_CSS_HREF = "https://jerometremblay.github.io/codex_log_viewer/codex_log_viewer.css"
+ONLINE_JS_HREF = "https://jerometremblay.github.io/codex_log_viewer/codex_log_viewer.js"
 
 SELECTOR_PREFIXES = ("row", "event", "response", "role")
 COMMIT_TITLE_PATTERN = re.compile(
@@ -51,6 +54,9 @@ DEFAULT_EXCLUDED_SELECTORS = {
     "response:function_call_output",
     "role:developer",
     "role:system",
+}
+DEFAULT_INCLUDED_SELECTORS = {
+    "event:token_count",
 }
 SESSION_STEM_PATTERN = re.compile(r"^(?P<prefix>\d{14})_(?P<slug>.+)$")
 
@@ -336,7 +342,10 @@ def keep_row_default(row: dict) -> bool:
         return False
 
     selectors = row_selectors(row)
-    return not any(selector in DEFAULT_EXCLUDED_SELECTORS for selector in selectors)
+    keep = not any(selector in DEFAULT_EXCLUDED_SELECTORS for selector in selectors)
+    if any(selector in DEFAULT_INCLUDED_SELECTORS for selector in selectors):
+        keep = True
+    return keep
 
 
 def should_keep_row(
@@ -413,10 +422,16 @@ def collect_selector_values(rows: list[dict]) -> dict[str, set[str]]:
 
 
 def selector_default_status(selector: str) -> str:
+    if selector in DEFAULT_INCLUDED_SELECTORS:
+        return "kept"
     if selector in DEFAULT_EXCLUDED_SELECTORS:
         return "dropped"
     prefix, _ = selector.split(":", 1)
-    if prefix == "event" and "row:event_msg" in DEFAULT_EXCLUDED_SELECTORS:
+    if (
+        prefix == "event"
+        and "row:event_msg" in DEFAULT_EXCLUDED_SELECTORS
+        and selector not in DEFAULT_INCLUDED_SELECTORS
+    ):
         return "dropped"
     return "kept"
 
@@ -439,9 +454,33 @@ def write_jsonl(path: Path, rows: list[dict]) -> None:
             handle.write(json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n")
 
 
-def write_html(path: Path, jsonl_name: str, title: str) -> None:
-    html_text = HTML_TEMPLATE.format(jsonl_name=jsonl_name, title=title)
+def write_html(path: Path, jsonl_name: str, title: str, css_href: str, js_href: str) -> None:
+    html_text = HTML_TEMPLATE.format(
+        jsonl_name=jsonl_name, title=title, css_href=css_href, js_href=js_href
+    )
     path.write_text(html_text, encoding="utf-8")
+
+
+def find_codex_log_viewer_root(start: Path | None = None) -> Path | None:
+    candidate = (start or Path.cwd()).resolve()
+    for directory in (candidate, *candidate.parents):
+        if (
+            directory.name == "codex_log_viewer"
+            and (directory / "codex_log_viewer.css").exists()
+            and (directory / "codex_log_viewer.js").exists()
+        ):
+            return directory
+    return None
+
+
+def copy_viewer_assets(output_dir: Path, source_dir: Path) -> list[Path]:
+    copied: list[Path] = []
+    for filename in ("codex_log_viewer.css", "codex_log_viewer.js"):
+        source = source_dir / filename
+        destination = output_dir / filename
+        shutil.copy2(source, destination)
+        copied.append(destination)
+    return copied
 
 
 def index_directory_for_output(output: Path, cwd: Path | None = None) -> Path:
@@ -712,7 +751,24 @@ def main() -> int:
     html_path = None
     if args.with_html:
         html_path = output.with_suffix(".html")
-        write_html(html_path, output.name, f"Codex Conversation Log - {goal_text}")
+        local_viewer_root = find_codex_log_viewer_root(Path.cwd())
+        if local_viewer_root is not None:
+            css_href = "./codex_log_viewer.css"
+            js_href = "./codex_log_viewer.js"
+            write_html(
+                html_path, output.name, f"Codex Conversation Log - {goal_text}", css_href, js_href
+            )
+            copied_assets = copy_viewer_assets(html_path.parent, local_viewer_root)
+            for asset in copied_assets:
+                print(f"asset: {asset}")
+        else:
+            write_html(
+                html_path,
+                output.name,
+                f"Codex Conversation Log - {goal_text}",
+                ONLINE_CSS_HREF,
+                ONLINE_JS_HREF,
+            )
 
     index_dir = index_directory_for_output(output)
     index_path = write_sessions_index(index_dir)
