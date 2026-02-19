@@ -20,6 +20,10 @@ class ExportCurrentConversationFilterTests(unittest.TestCase):
         row = {"type": "event_msg", "payload": {"type": "task_started"}}
         self.assertFalse(MODULE.keep_row_default(row))
 
+    def test_default_keeps_token_count_event_msg(self):
+        row = {"type": "event_msg", "payload": {"type": "token_count"}}
+        self.assertTrue(MODULE.keep_row_default(row))
+
     def test_default_excludes_compacted(self):
         row = {"type": "compacted"}
         self.assertFalse(MODULE.keep_row_default(row))
@@ -152,6 +156,9 @@ class ExportCurrentConversationFilterTests(unittest.TestCase):
 
     def test_event_selector_default_status_is_effectively_dropped(self):
         self.assertEqual(MODULE.selector_default_status("event:task_started"), "dropped")
+
+    def test_token_count_event_selector_default_status_is_kept(self):
+        self.assertEqual(MODULE.selector_default_status("event:token_count"), "kept")
 
     def test_default_output_path_omits_conversation_only_suffix(self):
         rows = [

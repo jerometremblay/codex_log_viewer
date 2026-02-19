@@ -19,6 +19,7 @@ Use `scripts/export_current_conversation.py` to generate a filtered conversation
 
 3. Apply default filtering.
 - Drop `session_meta`, `turn_context`, `event_msg`, and `compacted`.
+- Keep `event_msg` rows where `payload.type` is `token_count`.
 - Drop `response_item` rows where `payload.type` is `reasoning` or `function_call_output`.
 - Drop developer/system prompt messages (`response_item` message rows where role is `developer` or `system`).
 - Drop bootstrap AGENTS directives injected as user messages (rows beginning with `# AGENTS.md instructions for ...` and containing `<INSTRUCTIONS>...</INSTRUCTIONS>`).
