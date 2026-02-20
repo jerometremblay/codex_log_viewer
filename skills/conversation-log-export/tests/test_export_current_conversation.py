@@ -316,5 +316,17 @@ class ExportCurrentConversationIndexTests(unittest.TestCase):
             self.assertIn("No session exports yet.", index_html)
 
 
+class ExportCurrentConversationAssetsTests(unittest.TestCase):
+    def test_resolve_asset_hrefs_defaults_to_online_assets(self):
+        css_href, js_href = MODULE.resolve_asset_hrefs(None)
+        self.assertEqual(css_href, MODULE.ONLINE_CSS_HREF)
+        self.assertEqual(js_href, MODULE.ONLINE_JS_HREF)
+
+    def test_resolve_asset_hrefs_uses_custom_base(self):
+        css_href, js_href = MODULE.resolve_asset_hrefs("https://example.com/viewer/")
+        self.assertEqual(css_href, "https://example.com/viewer/codex_log_viewer.css")
+        self.assertEqual(js_href, "https://example.com/viewer/codex_log_viewer.js")
+
+
 if __name__ == "__main__":
     unittest.main()
