@@ -37,6 +37,7 @@ Use `scripts/export_current_conversation.py` to generate a filtered conversation
 - HTML viewer assets default to GitHub-hosted files:
   - `https://jerometremblay.github.io/codex_log_viewer/codex_log_viewer.css`
   - `https://jerometremblay.github.io/codex_log_viewer/codex_log_viewer.js`
+- For local development of generated HTML, append `?viewerAssets=local` to load `./codex_log_viewer.css` and `./codex_log_viewer.js` instead.
 - Use `--viewer-assets-base <url-or-path>` to override where HTML loads `codex_log_viewer.css` and `codex_log_viewer.js`.
 - Always regenerate `<cwd>/codex_sessions/index.html` (or the output folder if it is named `codex_sessions`) so the session index stays current.
 

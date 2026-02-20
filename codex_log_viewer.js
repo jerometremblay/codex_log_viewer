@@ -27,6 +27,7 @@
   const DEFAULT_SHOW_CUMULATIVE_COST_OVERLAY = true;
   let mdRenderer = null;
   let interactionsBound = false;
+  let chartContext = null;
 
   function esc(text) {
     return String(text ?? "")
@@ -507,10 +508,18 @@
   }
 
   // Creates two SVG charts: tokens (left) and price (right), both over conversation progress.
-  function createTokenUsageSvg(points, showCumulativeCostOverlay, userInterventionProgress) {
+  function createTokenUsageSvg(points, showCumulativeCostOverlay, userInterventionProgress, seriesVisibility = null) {
     if (!Array.isArray(points) || points.length < 2) {
       return "";
     }
+    const visibility = {
+      input: true,
+      cachedInput: true,
+      output: true,
+      price: true,
+      ...(seriesVisibility || {}),
+    };
+    const cumulativeVisible = Boolean(showCumulativeCostOverlay);
 
     const width = 440;
     const height = 220;
@@ -522,10 +531,12 @@
     }
 
     const tokenMinY = 0;
-    const tokenMaxY = Math.max(
-      1,
-      ...points.map((p) => Math.max(p.uncachedInputTokens, p.cachedInputTokens, p.outputTokens)),
-    );
+    const tokenValues = [
+      ...(visibility.input ? points.map((p) => p.uncachedInputTokens) : []),
+      ...(visibility.cachedInput ? points.map((p) => p.cachedInputTokens) : []),
+      ...(visibility.output ? points.map((p) => p.outputTokens) : []),
+    ];
+    const tokenMaxY = Math.max(1, ...(tokenValues.length ? tokenValues : [0]));
     const tokenSpan = Math.max(1, tokenMaxY - tokenMinY);
 
     const derivedCumulativeSeries = [];
@@ -539,14 +550,14 @@
     }
     const hasCumulativeData = derivedCumulativeSeries.length > 0;
     const priceMinY = 0;
-    const turnPriceMaxY = Math.max(0.0001, ...points.map((p) => p.turnPriceUsd));
+    const turnPriceValues = visibility.price ? points.map((p) => p.turnPriceUsd) : [];
+    const combinedPriceValues = [
+      ...(visibility.price ? points.map((p) => p.turnPriceUsd) : []),
+      ...((hasCumulativeData && cumulativeVisible) ? derivedCumulativeSeries : []),
+    ];
+    const turnPriceMaxY = Math.max(0.0001, ...(turnPriceValues.length ? turnPriceValues : [0]));
     const turnPriceSpan = Math.max(0.0001, turnPriceMaxY - priceMinY);
-    const combinedPriceMaxY = hasCumulativeData
-      ? Math.max(
-        turnPriceMaxY,
-        ...derivedCumulativeSeries,
-      )
-      : turnPriceMaxY;
+    const combinedPriceMaxY = Math.max(0.0001, ...(combinedPriceValues.length ? combinedPriceValues : [0]));
     const combinedPriceSpan = Math.max(0.0001, combinedPriceMaxY - priceMinY);
     const interventionProgressValues = Array.isArray(userInterventionProgress)
       ? userInterventionProgress
@@ -566,19 +577,19 @@
     const yPriceTurnPx = (value) => m.top + (1 - (value - priceMinY) / turnPriceSpan) * plotH;
     const yPriceCombinedPx = (value) => m.top + (1 - (value - priceMinY) / combinedPriceSpan) * plotH;
 
-    const buildPath = (valueGetter, yPx) => points
-      .map((p, idx) => `${idx === 0 ? "M" : "L"}${xPx(p.progress).toFixed(2)} ${yPx(valueGetter(p)).toFixed(2)}`)
-      .join(" ");
+    const buildDots = (valueGetter, yPx, className) => points
+      .map((p) => `<circle cx="${xPx(p.progress).toFixed(2)}" cy="${yPx(valueGetter(p)).toFixed(2)}" r="2.9" class="token-chart-point ${className}"/>`)
+      .join("");
 
-    const uncachedInputPath = buildPath((p) => p.uncachedInputTokens, yTokenPx);
-    const cachedInputPath = buildPath((p) => p.cachedInputTokens, yTokenPx);
-    const outputPath = buildPath((p) => p.outputTokens, yTokenPx);
-    const pricePathTurnScale = buildPath((p) => p.turnPriceUsd, yPriceTurnPx);
-    const pricePathCombinedScale = buildPath((p) => p.turnPriceUsd, yPriceCombinedPx);
-    const cumulativePricePathCombinedScale = hasCumulativeData
+    const uncachedInputDots = visibility.input ? buildDots((p) => p.uncachedInputTokens, yTokenPx, "token-chart-point-input") : "";
+    const cachedInputDots = visibility.cachedInput ? buildDots((p) => p.cachedInputTokens, yTokenPx, "token-chart-point-input-cached") : "";
+    const outputDots = visibility.output ? buildDots((p) => p.outputTokens, yTokenPx, "token-chart-point-output") : "";
+    const priceDotsTurnScale = visibility.price ? buildDots((p) => p.turnPriceUsd, yPriceTurnPx, "token-chart-point-price") : "";
+    const priceDotsCombinedScale = visibility.price ? buildDots((p) => p.turnPriceUsd, yPriceCombinedPx, "token-chart-point-price") : "";
+    const cumulativePriceDotsCombinedScale = hasCumulativeData && cumulativeVisible
       ? points
-        .map((p, idx) => `${idx === 0 ? "M" : "L"}${xPx(p.progress).toFixed(2)} ${yPriceCombinedPx(derivedCumulativeSeries[idx]).toFixed(2)}`)
-        .join(" ")
+        .map((p, idx) => `<circle cx="${xPx(p.progress).toFixed(2)}" cy="${yPriceCombinedPx(derivedCumulativeSeries[idx]).toFixed(2)}" r="2.5" class="token-chart-point token-chart-point-price-cumulative"/>`)
+        .join("")
       : "";
 
     const firstLabel = prettyTimestamp(points[0].ts) || "Start";
@@ -613,15 +624,15 @@
       .filter(Boolean)
       .join("");
 
-    const renderPriceSvg = (gridHtml, turnPath, includeCumulative, ariaLabel, modeClass) => `
+    const renderPriceSvg = (gridHtml, turnDots, includeCumulative, ariaLabel, modeClass) => `
           <svg class="token-chart-svg ${modeClass}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(ariaLabel)}">
             <rect x="0" y="0" width="${width}" height="${height}" class="token-chart-bg"/>
             ${gridHtml}
             ${interventionLines}
             <line x1="${m.left}" y1="${(height - m.bottom).toFixed(2)}" x2="${(width - m.right).toFixed(2)}" y2="${(height - m.bottom).toFixed(2)}" class="token-chart-axis"/>
             <line x1="${m.left}" y1="${m.top}" x2="${m.left}" y2="${(height - m.bottom).toFixed(2)}" class="token-chart-axis"/>
-            ${includeCumulative ? `<path d="${cumulativePricePathCombinedScale}" class="token-chart-line token-chart-line-price-cumulative"/>` : ""}
-            <path d="${turnPath}" class="token-chart-line token-chart-line-price"/>
+            ${includeCumulative ? cumulativePriceDotsCombinedScale : ""}
+            ${turnDots}
             <text x="${(m.left + plotW / 2).toFixed(2)}" y="${(height - 10).toFixed(2)}" text-anchor="middle" class="token-chart-label">Conversation progress</text>
             <text x="16" y="${(m.top + plotH / 2).toFixed(2)}" text-anchor="middle" transform="rotate(-90 16 ${(m.top + plotH / 2).toFixed(2)})" class="token-chart-label">USD</text>
             <text x="${m.left}" y="${(height - m.bottom + 18).toFixed(2)}" text-anchor="start" class="token-chart-tick">${esc(firstLabel)}</text>
@@ -633,10 +644,10 @@
     <section class="token-chart-panel${showCumulativeCostOverlay ? "" : " hide-cumulative-cost-overlay"}">
       <div class="token-chart-title">Token Usage Progress</div>
       <div class="token-chart-legend">
-        <span class="token-chart-key token-chart-key-input">Input tokens (non-cached)</span>
-        <span class="token-chart-key token-chart-key-input-cached">Cached input tokens</span>
-        <span class="token-chart-key token-chart-key-output">Output tokens</span>
-        <span class="token-chart-key token-chart-key-price">Turn cost (USD)</span>
+        <label class="token-chart-key token-chart-key-input token-chart-key-toggle"><input type="checkbox" data-role="toggle-chart-series" data-series="input"${visibility.input ? " checked" : ""} /> Input tokens (non-cached)</label>
+        <label class="token-chart-key token-chart-key-input-cached token-chart-key-toggle"><input type="checkbox" data-role="toggle-chart-series" data-series="cached-input"${visibility.cachedInput ? " checked" : ""} /> Cached input tokens</label>
+        <label class="token-chart-key token-chart-key-output token-chart-key-toggle"><input type="checkbox" data-role="toggle-chart-series" data-series="output"${visibility.output ? " checked" : ""} /> Output tokens</label>
+        <label class="token-chart-key token-chart-key-price token-chart-key-toggle"><input type="checkbox" data-role="toggle-chart-series" data-series="price"${visibility.price ? " checked" : ""} /> Turn cost (USD)</label>
         ${hasCumulativeData ? `<label class="token-chart-key token-chart-key-price-cumulative token-chart-key-toggle"><input type="checkbox" data-role="toggle-cumulative-cost"${showCumulativeCostOverlay ? " checked" : ""} /> Cumulative cost (USD)</label>` : ""}
         <span class="token-chart-rates">Rates: input $${TOKEN_PRICE_INPUT_PER_1M.toFixed(2)}/1M, cached input $${TOKEN_PRICE_CACHED_INPUT_PER_1M.toFixed(3)}/1M, output $${TOKEN_PRICE_OUTPUT_PER_1M.toFixed(2)}/1M</span>
       </div>
@@ -649,9 +660,9 @@
             ${interventionLines}
             <line x1="${m.left}" y1="${(height - m.bottom).toFixed(2)}" x2="${(width - m.right).toFixed(2)}" y2="${(height - m.bottom).toFixed(2)}" class="token-chart-axis"/>
             <line x1="${m.left}" y1="${m.top}" x2="${m.left}" y2="${(height - m.bottom).toFixed(2)}" class="token-chart-axis"/>
-            <path d="${uncachedInputPath}" class="token-chart-line token-chart-line-input"/>
-            <path d="${cachedInputPath}" class="token-chart-line token-chart-line-input-cached"/>
-            <path d="${outputPath}" class="token-chart-line token-chart-line-output"/>
+            ${uncachedInputDots}
+            ${cachedInputDots}
+            ${outputDots}
             <text x="${(m.left + plotW / 2).toFixed(2)}" y="${(height - 10).toFixed(2)}" text-anchor="middle" class="token-chart-label">Conversation progress</text>
             <text x="16" y="${(m.top + plotH / 2).toFixed(2)}" text-anchor="middle" transform="rotate(-90 16 ${(m.top + plotH / 2).toFixed(2)})" class="token-chart-label">Tokens</text>
             <text x="${m.left}" y="${(height - m.bottom + 18).toFixed(2)}" text-anchor="start" class="token-chart-tick">${esc(firstLabel)}</text>
@@ -660,8 +671,8 @@
         </div>
         <div class="token-chart-card">
           <div class="token-chart-card-title">Price</div>
-          ${renderPriceSvg(turnPriceGrid, pricePathTurnScale, false, "Per-turn token price over conversation progress", "price-mode-turn")}
-          ${renderPriceSvg(combinedPriceGrid, pricePathCombinedScale, hasCumulativeData, "Per-turn and cumulative token price over conversation progress", "price-mode-combined")}
+          ${renderPriceSvg(turnPriceGrid, priceDotsTurnScale, false, "Per-turn token price over conversation progress", "price-mode-turn")}
+          ${renderPriceSvg(combinedPriceGrid, priceDotsCombinedScale, hasCumulativeData && cumulativeVisible, "Per-turn and cumulative token price over conversation progress", "price-mode-combined")}
         </div>
       </div>
     </section>
@@ -789,6 +800,10 @@
       blocks.push("<div class='session'><div class='title'>No events rendered</div><div class='subtitle'>The input file did not include renderable lines.</div></div>");
     }
 
+    chartContext = {
+      tokenSeries,
+      userInterventionProgress,
+    };
     const chartHtml = createTokenUsageSvg(
       tokenSeries,
       options.showCumulativeCostOverlay,
@@ -868,6 +883,37 @@
       } else if (state && Object.prototype.hasOwnProperty.call(state, cls)) {
         cb.checked = Boolean(state[cls]);
       }
+    }
+  }
+
+  function readChartSeriesVisibility(panel) {
+    const read = (series, defaultValue) => {
+      const cb = panel.querySelector(`input[data-role='toggle-chart-series'][data-series='${series}']`);
+      return cb ? cb.checked : defaultValue;
+    };
+    return {
+      input: read("input", true),
+      cachedInput: read("cached-input", true),
+      output: read("output", true),
+      price: read("price", true),
+    };
+  }
+
+  function rerenderTokenChartPanel(panel) {
+    if (!panel || !chartContext || !Array.isArray(chartContext.tokenSeries)) {
+      return;
+    }
+    const cumulativeToggle = panel.querySelector("input[data-role='toggle-cumulative-cost']");
+    const showCumulativeCostOverlay = cumulativeToggle ? cumulativeToggle.checked : false;
+    const seriesVisibility = readChartSeriesVisibility(panel);
+    const html = createTokenUsageSvg(
+      chartContext.tokenSeries,
+      showCumulativeCostOverlay,
+      chartContext.userInterventionProgress,
+      seriesVisibility,
+    );
+    if (html) {
+      panel.outerHTML = html;
     }
   }
 
@@ -1018,9 +1064,14 @@
         const cumulativeToggle = ev.target && ev.target.closest && ev.target.closest("input[data-role='toggle-cumulative-cost']");
         if (cumulativeToggle) {
           const panel = cumulativeToggle.closest(".token-chart-panel");
-          if (panel) {
-            panel.classList.toggle("hide-cumulative-cost-overlay", !cumulativeToggle.checked);
-          }
+          rerenderTokenChartPanel(panel);
+          return;
+        }
+
+        const chartSeriesToggle = ev.target && ev.target.closest && ev.target.closest("input[data-role='toggle-chart-series']");
+        if (chartSeriesToggle) {
+          const panel = chartSeriesToggle.closest(".token-chart-panel");
+          rerenderTokenChartPanel(panel);
           return;
         }
 
@@ -1203,5 +1254,9 @@
     }
   }
 
-  document.addEventListener("DOMContentLoaded", init);
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
 })();

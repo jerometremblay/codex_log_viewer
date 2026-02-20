@@ -5,9 +5,32 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="codex-log-source" content="20260219184701_user-actions-should-display-their-cost-which-includes-the-total.jsonl" />
   <title>Codex Conversation Log - user actions should display their cost, which includes the total cost of all events until the next user action.</title>
-  <link rel="stylesheet" href="https://jerometremblay.github.io/codex_log_viewer/codex_log_viewer.css" />
-  <script defer src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
-  <script defer src="https://jerometremblay.github.io/codex_log_viewer/codex_log_viewer.js"></script>
+  <script>
+    (function () {
+      var params = new URLSearchParams(window.location.search);
+      var useLocalAssets = params.get("viewerAssets") === "local";
+      var pathName = window.location.pathname || "";
+      var inCodexSessionsDir = /(^|\/)codex_sessions(\/|$)/.test(pathName);
+      var localBase = inCodexSessionsDir ? "../" : "./";
+      var cssHref = useLocalAssets ? (localBase + "codex_log_viewer.css") : "https://jerometremblay.github.io/codex_log_viewer/codex_log_viewer.css";
+      var jsHref = useLocalAssets ? (localBase + "codex_log_viewer.js") : "https://jerometremblay.github.io/codex_log_viewer/codex_log_viewer.js";
+
+      var css = document.createElement("link");
+      css.rel = "stylesheet";
+      css.href = cssHref;
+      document.head.appendChild(css);
+
+      var markdownItScript = document.createElement("script");
+      markdownItScript.defer = true;
+      markdownItScript.src = "https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js";
+      document.head.appendChild(markdownItScript);
+
+      var viewerScript = document.createElement("script");
+      viewerScript.defer = true;
+      viewerScript.src = jsHref;
+      document.head.appendChild(viewerScript);
+    })();
+  </script>
 </head>
 <body>
   <div class="container">
