@@ -19,8 +19,10 @@
     showTokenUsage: false,
   });
   const TOKEN_PRICE_INPUT_PER_1M = 1.75;
+  const TOKEN_PRICE_CACHED_INPUT_PER_1M = 0.175;
   const TOKEN_PRICE_OUTPUT_PER_1M = 14.0;
   const TOKEN_PRICE_INPUT_PER_TOKEN = TOKEN_PRICE_INPUT_PER_1M / 1_000_000;
+  const TOKEN_PRICE_CACHED_INPUT_PER_TOKEN = TOKEN_PRICE_CACHED_INPUT_PER_1M / 1_000_000;
   const TOKEN_PRICE_OUTPUT_PER_TOKEN = TOKEN_PRICE_OUTPUT_PER_1M / 1_000_000;
   const DEFAULT_SHOW_CUMULATIVE_COST_OVERLAY = true;
   let mdRenderer = null;
@@ -100,6 +102,66 @@
     return pretty ? `<span class='ts-inline'>${esc(pretty)}</span>` : "";
   }
 
+  function formatUsd(usdValue) {
+    const amount = Number(usdValue);
+    if (!Number.isFinite(amount)) {
+      return "$0.0000";
+    }
+    return amount >= 1 ? `$${amount.toFixed(2)}` : `$${amount.toFixed(4)}`;
+  }
+
+  function buildActionCostMarker(actionId) {
+    return `__ACTION_COST_${String(actionId)}__`;
+  }
+
+  function computeActionCostsByRole(timelineEvents) {
+    const safeEvents = Array.isArray(timelineEvents) ? timelineEvents : [];
+    const prefixCosts = [0];
+    const actionIndicesByRole = { user: [], assistant: [] };
+    for (let i = 0; i < safeEvents.length; i += 1) {
+      const event = safeEvents[i] || {};
+      const usd = event.kind === "cost" && Number.isFinite(event.usd) ? event.usd : 0;
+      prefixCosts.push(prefixCosts[prefixCosts.length - 1] + usd);
+      if (event.kind === "action" && (event.role === "user" || event.role === "assistant")) {
+        actionIndicesByRole[event.role].push({ index: i, actionId: event.actionId });
+      }
+    }
+
+    const costsByActionId = {};
+    for (const role of ["user", "assistant"]) {
+      const actions = actionIndicesByRole[role];
+      for (let i = 0; i < actions.length; i += 1) {
+        const startIndex = actions[i].index;
+        const endIndex = i + 1 < actions.length ? actions[i + 1].index : safeEvents.length;
+        costsByActionId[actions[i].actionId] = prefixCosts[endIndex] - prefixCosts[startIndex];
+      }
+    }
+    return costsByActionId;
+  }
+
+  function injectActionCosts(htmlBlock, costsByActionId) {
+    if (typeof htmlBlock !== "string" || !htmlBlock.includes("__ACTION_COST_")) {
+      return htmlBlock;
+    }
+    return htmlBlock.replace(/__ACTION_COST_([A-Za-z0-9_-]+)__/g, (_, actionId) => {
+      if (!Object.prototype.hasOwnProperty.call(costsByActionId, actionId)) {
+        return "";
+      }
+      const formattedCost = formatUsd(costsByActionId[actionId]);
+      return `<span class="cost-inline" title="Token cost accumulated until the next same-role action">${esc(formattedCost)}</span>`;
+    });
+  }
+
+  function buildTokenUsageSignature(entry) {
+    const info = (entry && entry.info) || {};
+    const total = info.total_token_usage || null;
+    const last = info.last_token_usage || null;
+    const modelContextWindow = Object.prototype.hasOwnProperty.call(info, "model_context_window")
+      ? info.model_context_window
+      : null;
+    return JSON.stringify({ total, last, modelContextWindow });
+  }
+
   function renderReasoning(entry, tsInline) {
     const summaryParts = entry.summary || [];
     const rawTexts = [];
@@ -130,7 +192,7 @@
     `;
   }
 
-  function renderMessage(entry, tsInline) {
+  function renderMessage(entry, tsInline, costInline = "") {
     const role = entry.role === "user" ? "user" : "assistant";
     const parts = entry.content || [];
     const texts = [];
@@ -146,7 +208,7 @@
     <div class='block ${cssClass}'>
       <div class='label-row'>
         <div class='label'>${label}</div>
-        <div class='actions'>${tsInline}</div>
+        <div class='actions'>${tsInline}${costInline}</div>
       </div>
       <div class='text markdown'>${textHtml}</div>
     </div>
@@ -408,20 +470,40 @@
     const last = info.last_token_usage || {};
     const total = info.total_token_usage || {};
     const inputTokens = Number(last.input_tokens);
+    const cachedInputTokensRaw = Number(last.cached_input_tokens);
     const outputTokens = Number(last.output_tokens);
     if (!Number.isFinite(inputTokens) || !Number.isFinite(outputTokens)) {
       return null;
     }
-    const turnPriceUsd = (inputTokens * TOKEN_PRICE_INPUT_PER_TOKEN) + (outputTokens * TOKEN_PRICE_OUTPUT_PER_TOKEN);
+    const cachedInputTokens = Number.isFinite(cachedInputTokensRaw) ? Math.max(0, cachedInputTokensRaw) : 0;
+    const uncachedInputTokens = Math.max(0, inputTokens - cachedInputTokens);
+    const turnPriceUsd =
+      (uncachedInputTokens * TOKEN_PRICE_INPUT_PER_TOKEN)
+      + (cachedInputTokens * TOKEN_PRICE_CACHED_INPUT_PER_TOKEN)
+      + (outputTokens * TOKEN_PRICE_OUTPUT_PER_TOKEN);
 
     const totalInputTokens = Number(total.input_tokens);
+    const totalCachedInputTokensRaw = Number(total.cached_input_tokens);
     const totalOutputTokens = Number(total.output_tokens);
+    const totalCachedInputTokens = Number.isFinite(totalCachedInputTokensRaw) ? Math.max(0, totalCachedInputTokensRaw) : 0;
+    const totalUncachedInputTokens = Number.isFinite(totalInputTokens)
+      ? Math.max(0, totalInputTokens - totalCachedInputTokens)
+      : null;
     const cumulativePriceUsd =
-      Number.isFinite(totalInputTokens) && Number.isFinite(totalOutputTokens)
-        ? (totalInputTokens * TOKEN_PRICE_INPUT_PER_TOKEN) + (totalOutputTokens * TOKEN_PRICE_OUTPUT_PER_TOKEN)
+      totalUncachedInputTokens !== null && Number.isFinite(totalOutputTokens)
+        ? (totalUncachedInputTokens * TOKEN_PRICE_INPUT_PER_TOKEN)
+          + (totalCachedInputTokens * TOKEN_PRICE_CACHED_INPUT_PER_TOKEN)
+          + (totalOutputTokens * TOKEN_PRICE_OUTPUT_PER_TOKEN)
         : null;
 
-    return { inputTokens, outputTokens, turnPriceUsd, cumulativePriceUsd };
+    return {
+      inputTokens,
+      cachedInputTokens,
+      uncachedInputTokens,
+      outputTokens,
+      turnPriceUsd,
+      cumulativePriceUsd,
+    };
   }
 
   // Creates two SVG charts: tokens (left) and price (right), both over conversation progress.
@@ -442,20 +524,27 @@
     const tokenMinY = 0;
     const tokenMaxY = Math.max(
       1,
-      ...points.map((p) => Math.max(p.inputTokens, p.outputTokens)),
+      ...points.map((p) => Math.max(p.uncachedInputTokens, p.cachedInputTokens, p.outputTokens)),
     );
     const tokenSpan = Math.max(1, tokenMaxY - tokenMinY);
 
-    const hasCumulativeData = points.some((p) => Number.isFinite(p.cumulativePriceUsd));
+    const derivedCumulativeSeries = [];
+    let runningCumulative = 0;
+    for (const point of points) {
+      const turn = Number(point.turnPriceUsd);
+      if (Number.isFinite(turn)) {
+        runningCumulative += turn;
+      }
+      derivedCumulativeSeries.push(runningCumulative);
+    }
+    const hasCumulativeData = derivedCumulativeSeries.length > 0;
     const priceMinY = 0;
     const turnPriceMaxY = Math.max(0.0001, ...points.map((p) => p.turnPriceUsd));
     const turnPriceSpan = Math.max(0.0001, turnPriceMaxY - priceMinY);
     const combinedPriceMaxY = hasCumulativeData
       ? Math.max(
         turnPriceMaxY,
-        ...points
-          .map((p) => p.cumulativePriceUsd)
-          .filter((value) => Number.isFinite(value)),
+        ...derivedCumulativeSeries,
       )
       : turnPriceMaxY;
     const combinedPriceSpan = Math.max(0.0001, combinedPriceMaxY - priceMinY);
@@ -481,15 +570,15 @@
       .map((p, idx) => `${idx === 0 ? "M" : "L"}${xPx(p.progress).toFixed(2)} ${yPx(valueGetter(p)).toFixed(2)}`)
       .join(" ");
 
-    const inputPath = buildPath((p) => p.inputTokens, yTokenPx);
+    const uncachedInputPath = buildPath((p) => p.uncachedInputTokens, yTokenPx);
+    const cachedInputPath = buildPath((p) => p.cachedInputTokens, yTokenPx);
     const outputPath = buildPath((p) => p.outputTokens, yTokenPx);
     const pricePathTurnScale = buildPath((p) => p.turnPriceUsd, yPriceTurnPx);
     const pricePathCombinedScale = buildPath((p) => p.turnPriceUsd, yPriceCombinedPx);
     const cumulativePricePathCombinedScale = hasCumulativeData
-      ? buildPath(
-        (p) => (Number.isFinite(p.cumulativePriceUsd) ? p.cumulativePriceUsd : p.turnPriceUsd),
-        yPriceCombinedPx,
-      )
+      ? points
+        .map((p, idx) => `${idx === 0 ? "M" : "L"}${xPx(p.progress).toFixed(2)} ${yPriceCombinedPx(derivedCumulativeSeries[idx]).toFixed(2)}`)
+        .join(" ")
       : "";
 
     const firstLabel = prettyTimestamp(points[0].ts) || "Start";
@@ -544,22 +633,24 @@
     <section class="token-chart-panel${showCumulativeCostOverlay ? "" : " hide-cumulative-cost-overlay"}">
       <div class="token-chart-title">Token Usage Progress</div>
       <div class="token-chart-legend">
-        <span class="token-chart-key token-chart-key-input">Input tokens</span>
+        <span class="token-chart-key token-chart-key-input">Input tokens (non-cached)</span>
+        <span class="token-chart-key token-chart-key-input-cached">Cached input tokens</span>
         <span class="token-chart-key token-chart-key-output">Output tokens</span>
         <span class="token-chart-key token-chart-key-price">Turn cost (USD)</span>
         ${hasCumulativeData ? `<label class="token-chart-key token-chart-key-price-cumulative token-chart-key-toggle"><input type="checkbox" data-role="toggle-cumulative-cost"${showCumulativeCostOverlay ? " checked" : ""} /> Cumulative cost (USD)</label>` : ""}
-        <span class="token-chart-rates">Rates: input $${TOKEN_PRICE_INPUT_PER_1M.toFixed(2)}/1M, output $${TOKEN_PRICE_OUTPUT_PER_1M.toFixed(2)}/1M</span>
+        <span class="token-chart-rates">Rates: input $${TOKEN_PRICE_INPUT_PER_1M.toFixed(2)}/1M, cached input $${TOKEN_PRICE_CACHED_INPUT_PER_1M.toFixed(3)}/1M, output $${TOKEN_PRICE_OUTPUT_PER_1M.toFixed(2)}/1M</span>
       </div>
       <div class="token-chart-grid-layout">
         <div class="token-chart-card">
-          <div class="token-chart-card-title">Tokens (Left)</div>
-          <svg class="token-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Input and output token counts over conversation progress">
+          <div class="token-chart-card-title">Tokens</div>
+          <svg class="token-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Non-cached input, cached input, and output token counts over conversation progress">
             <rect x="0" y="0" width="${width}" height="${height}" class="token-chart-bg"/>
             ${tokenGrid}
             ${interventionLines}
             <line x1="${m.left}" y1="${(height - m.bottom).toFixed(2)}" x2="${(width - m.right).toFixed(2)}" y2="${(height - m.bottom).toFixed(2)}" class="token-chart-axis"/>
             <line x1="${m.left}" y1="${m.top}" x2="${m.left}" y2="${(height - m.bottom).toFixed(2)}" class="token-chart-axis"/>
-            <path d="${inputPath}" class="token-chart-line token-chart-line-input"/>
+            <path d="${uncachedInputPath}" class="token-chart-line token-chart-line-input"/>
+            <path d="${cachedInputPath}" class="token-chart-line token-chart-line-input-cached"/>
             <path d="${outputPath}" class="token-chart-line token-chart-line-output"/>
             <text x="${(m.left + plotW / 2).toFixed(2)}" y="${(height - 10).toFixed(2)}" text-anchor="middle" class="token-chart-label">Conversation progress</text>
             <text x="16" y="${(m.top + plotH / 2).toFixed(2)}" text-anchor="middle" transform="rotate(-90 16 ${(m.top + plotH / 2).toFixed(2)})" class="token-chart-label">Tokens</text>
@@ -568,7 +659,7 @@
           </svg>
         </div>
         <div class="token-chart-card">
-          <div class="token-chart-card-title">Price (Right)</div>
+          <div class="token-chart-card-title">Price</div>
           ${renderPriceSvg(turnPriceGrid, pricePathTurnScale, false, "Per-turn token price over conversation progress", "price-mode-turn")}
           ${renderPriceSvg(combinedPriceGrid, pricePathCombinedScale, hasCumulativeData, "Per-turn and cumulative token price over conversation progress", "price-mode-combined")}
         </div>
@@ -580,10 +671,13 @@
   function renderJsonl(jsonlText, sourcePath, options) {
     const blocks = [];
     const availableFilterClasses = new Set();
+    const timelineEvents = [];
     const tokenSeries = [];
     const userInterventionProgress = [];
     let sessionHeaderDone = false;
     let wrappedMode = null;
+    let actionCounter = 0;
+    let lastTokenUsageSignature = null;
     const lines = jsonlText.split(/\r?\n/);
     let progress = 0;
 
@@ -634,11 +728,15 @@
         availableFilterClasses.add("reasoning");
         blocks.push(renderReasoning(entry, tsInline));
       } else if (typ === "message") {
-        if (entry.role === "user") {
+        const role = entry.role === "user" ? "user" : "assistant";
+        const actionId = String(actionCounter);
+        actionCounter += 1;
+        timelineEvents.push({ kind: "action", role, actionId });
+        if (role === "user") {
           userInterventionProgress.push(currentProgress);
         }
-        availableFilterClasses.add(entry.role === "user" ? "user" : "assistant");
-        blocks.push(renderMessage(entry, tsInline));
+        availableFilterClasses.add(role);
+        blocks.push(renderMessage(entry, tsInline, buildActionCostMarker(actionId)));
       } else if (typ === "function_call") {
         if (isPlanUpdateFunctionCall(entry)) {
           availableFilterClasses.add("plan");
@@ -650,19 +748,31 @@
         availableFilterClasses.add("func-output");
         blocks.push(renderFunctionOutput(entry, tsInline, options));
       } else if (typ === "user_message") {
+        const actionId = String(actionCounter);
+        actionCounter += 1;
+        timelineEvents.push({ kind: "action", role: "user", actionId });
         userInterventionProgress.push(currentProgress);
         availableFilterClasses.add("user");
-        blocks.push(renderMessage({ role: "user", content: [{ type: "input_text", text: entry.message || "" }] }, tsInline));
+        blocks.push(renderMessage({ role: "user", content: [{ type: "input_text", text: entry.message || "" }] }, tsInline, buildActionCostMarker(actionId)));
       } else if (typ === "agent_message") {
+        const actionId = String(actionCounter);
+        actionCounter += 1;
+        timelineEvents.push({ kind: "action", role: "assistant", actionId });
         availableFilterClasses.add("assistant");
-        blocks.push(renderMessage({ role: "assistant", content: [{ type: "output_text", text: entry.message || "" }] }, tsInline));
+        blocks.push(renderMessage({ role: "assistant", content: [{ type: "output_text", text: entry.message || "" }] }, tsInline, buildActionCostMarker(actionId)));
       } else if (typ === "agent_reasoning") {
         availableFilterClasses.add("reasoning");
         blocks.push(renderReasoning({ summary: [{ type: "summary_text", text: entry.text || "" }] }, tsInline));
       } else if (typ === "token_count") {
+        const tokenUsageSignature = buildTokenUsageSignature(entry);
+        if (tokenUsageSignature === lastTokenUsageSignature) {
+          continue;
+        }
+        lastTokenUsageSignature = tokenUsageSignature;
         availableFilterClasses.add("usage");
         const metrics = readTokenMetrics(entry);
         if (metrics !== null) {
+          timelineEvents.push({ kind: "cost", usd: metrics.turnPriceUsd });
           tokenSeries.push({ ts: tsRaw, progress: currentProgress, ...metrics });
         }
         blocks.push(renderTokenUsage(entry, tsInline));
@@ -684,7 +794,12 @@
       options.showCumulativeCostOverlay,
       userInterventionProgress,
     );
-    return `${chartHtml}${renderToolbar(options.showTokenUsage, availableFilterClasses)}${blocks.filter(Boolean).join("")}`;
+    const actionCostsByRole = computeActionCostsByRole(timelineEvents);
+    const blocksWithActionCosts = blocks
+      .filter(Boolean)
+      .map((blockHtml) => injectActionCosts(blockHtml, actionCostsByRole))
+      .join("");
+    return `${chartHtml}${renderToolbar(options.showTokenUsage, availableFilterClasses)}${blocksWithActionCosts}`;
   }
 
   function setCollapsed(el, collapsed) {
