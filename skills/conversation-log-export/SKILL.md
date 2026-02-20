@@ -34,6 +34,10 @@ Use `scripts/export_current_conversation.py` to generate a filtered conversation
 - Goal slug is derived from the first user request in the selected conversation window.
 - If exactly one commit message title is generated in assistant output (for example `us-123 ...`), its first line is used as the goal text for slug generation.
 - Use `--with-html` to create a matching HTML viewer file beside the JSONL.
+- HTML viewer assets default to GitHub-hosted files:
+  - `https://jerometremblay.github.io/codex_log_viewer/codex_log_viewer.css`
+  - `https://jerometremblay.github.io/codex_log_viewer/codex_log_viewer.js`
+- Use `--viewer-assets-base <url-or-path>` to override where HTML loads `codex_log_viewer.css` and `codex_log_viewer.js`.
 - Always regenerate `<cwd>/codex_sessions/index.html` (or the output folder if it is named `codex_sessions`) so the session index stays current.
 
 ## Commands
@@ -43,6 +47,7 @@ python3 scripts/export_current_conversation.py
 python3 scripts/export_current_conversation.py --source /absolute/path/to/rollout.jsonl
 python3 scripts/export_current_conversation.py --anchor-text "i have the delete button in lab tests." --with-html
 python3 scripts/export_current_conversation.py --output /absolute/path/to/out.jsonl --with-html
+python3 scripts/export_current_conversation.py --with-html --viewer-assets-base https://example.com/viewer
 python3 scripts/export_current_conversation.py --list-types
 python3 scripts/export_current_conversation.py --include row:event_msg,row:compacted
 python3 scripts/export_current_conversation.py --include response:reasoning,response:function_call_output

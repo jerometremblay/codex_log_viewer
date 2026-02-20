@@ -4,7 +4,6 @@ import argparse
 import html
 import json
 import re
-import shutil
 import sys
 import unicodedata
 from collections import defaultdict
@@ -106,6 +105,14 @@ def parse_args() -> argparse.Namespace:
         "--with-html",
         action="store_true",
         help="Also generate a matching HTML viewer file beside the output JSONL.",
+    )
+    parser.add_argument(
+        "--viewer-assets-base",
+        help=(
+            "Optional base URL/path for viewer assets. When set, HTML loads "
+            "<base>/codex_log_viewer.css and <base>/codex_log_viewer.js. "
+            "Defaults to GitHub-hosted assets."
+        ),
     )
     return parser.parse_args()
 
@@ -461,26 +468,15 @@ def write_html(path: Path, jsonl_name: str, title: str, css_href: str, js_href: 
     path.write_text(html_text, encoding="utf-8")
 
 
-def find_codex_log_viewer_root(start: Path | None = None) -> Path | None:
-    candidate = (start or Path.cwd()).resolve()
-    for directory in (candidate, *candidate.parents):
-        if (
-            directory.name == "codex_log_viewer"
-            and (directory / "codex_log_viewer.css").exists()
-            and (directory / "codex_log_viewer.js").exists()
-        ):
-            return directory
-    return None
+def resolve_asset_hrefs(viewer_assets_base: str | None) -> tuple[str, str]:
+    base = (viewer_assets_base or "").strip()
+    if not base:
+        return ONLINE_CSS_HREF, ONLINE_JS_HREF
 
-
-def copy_viewer_assets(output_dir: Path, source_dir: Path) -> list[Path]:
-    copied: list[Path] = []
-    for filename in ("codex_log_viewer.css", "codex_log_viewer.js"):
-        source = source_dir / filename
-        destination = output_dir / filename
-        shutil.copy2(source, destination)
-        copied.append(destination)
-    return copied
+    normalized_base = base.rstrip("/")
+    css_href = f"{normalized_base}/codex_log_viewer.css"
+    js_href = f"{normalized_base}/codex_log_viewer.js"
+    return css_href, js_href
 
 
 def index_directory_for_output(output: Path, cwd: Path | None = None) -> Path:
@@ -751,24 +747,10 @@ def main() -> int:
     html_path = None
     if args.with_html:
         html_path = output.with_suffix(".html")
-        local_viewer_root = find_codex_log_viewer_root(Path.cwd())
-        if local_viewer_root is not None:
-            css_href = "./codex_log_viewer.css"
-            js_href = "./codex_log_viewer.js"
-            write_html(
-                html_path, output.name, f"Codex Conversation Log - {goal_text}", css_href, js_href
-            )
-            copied_assets = copy_viewer_assets(html_path.parent, local_viewer_root)
-            for asset in copied_assets:
-                print(f"asset: {asset}")
-        else:
-            write_html(
-                html_path,
-                output.name,
-                f"Codex Conversation Log - {goal_text}",
-                ONLINE_CSS_HREF,
-                ONLINE_JS_HREF,
-            )
+        css_href, js_href = resolve_asset_hrefs(args.viewer_assets_base)
+        write_html(
+            html_path, output.name, f"Codex Conversation Log - {goal_text}", css_href, js_href
+        )
 
     index_dir = index_directory_for_output(output)
     index_path = write_sessions_index(index_dir)
