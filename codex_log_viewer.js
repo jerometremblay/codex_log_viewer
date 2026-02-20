@@ -152,61 +152,14 @@
     });
   }
 
-  function sumActionCosts(costsByActionId, actionIds) {
-    let total = 0;
-    for (const actionId of actionIds) {
-      const amount = Number(costsByActionId[actionId]);
-      if (Number.isFinite(amount)) {
-        total += amount;
-      }
-    }
-    return total;
-  }
-
-  function computeUserActionScopeTotalUsd(timelineEvents) {
-    if (!Array.isArray(timelineEvents) || timelineEvents.length === 0) {
-      return null;
-    }
-    let firstUserActionIndex = -1;
-    for (let i = 0; i < timelineEvents.length; i += 1) {
-      const event = timelineEvents[i] || {};
-      if (event.kind === "action" && event.role === "user") {
-        firstUserActionIndex = i;
-        break;
-      }
-    }
-    if (firstUserActionIndex < 0) {
-      return null;
-    }
-    let sum = 0;
-    for (let i = firstUserActionIndex; i < timelineEvents.length; i += 1) {
-      const event = timelineEvents[i] || {};
-      if (event.kind !== "cost") {
-        continue;
-      }
-      const amount = Number(event.usd);
-      if (Number.isFinite(amount)) {
-        sum += amount;
-      }
-    }
-    return sum;
-  }
-
-  function renderCostValidation(userActionTotalUsd, userActionScopeTotalUsd) {
-    if (!Number.isFinite(userActionTotalUsd) || !Number.isFinite(userActionScopeTotalUsd)) {
-      return "";
-    }
-    const delta = userActionTotalUsd - userActionScopeTotalUsd;
-    const deltaAbs = Math.abs(delta);
-    const isMatch = deltaAbs < 0.000001;
-    return `
-    <section class="cost-validation ${isMatch ? "ok" : "warn"}">
-      <div class="cost-validation-title">User Action Cost Validation</div>
-      <div class="cost-validation-row">Sum of user action tags: <b>${esc(formatUsd(userActionTotalUsd))}</b></div>
-      <div class="cost-validation-row">User-action scope total: <b>${esc(formatUsd(userActionScopeTotalUsd))}</b></div>
-      <div class="cost-validation-row">Delta: <b>${esc(formatUsd(deltaAbs))}</b>${isMatch ? " (match)" : " (mismatch)"}</div>
-    </section>
-    `;
+  function buildTokenUsageSignature(entry) {
+    const info = (entry && entry.info) || {};
+    const total = info.total_token_usage || null;
+    const last = info.last_token_usage || null;
+    const modelContextWindow = Object.prototype.hasOwnProperty.call(info, "model_context_window")
+      ? info.model_context_window
+      : null;
+    return JSON.stringify({ total, last, modelContextWindow });
   }
 
   function renderReasoning(entry, tsInline) {
@@ -719,12 +672,12 @@
     const blocks = [];
     const availableFilterClasses = new Set();
     const timelineEvents = [];
-    const userActionIds = [];
     const tokenSeries = [];
     const userInterventionProgress = [];
     let sessionHeaderDone = false;
     let wrappedMode = null;
     let actionCounter = 0;
+    let lastTokenUsageSignature = null;
     const lines = jsonlText.split(/\r?\n/);
     let progress = 0;
 
@@ -780,9 +733,6 @@
         actionCounter += 1;
         timelineEvents.push({ kind: "action", role, actionId });
         if (role === "user") {
-          userActionIds.push(actionId);
-        }
-        if (role === "user") {
           userInterventionProgress.push(currentProgress);
         }
         availableFilterClasses.add(role);
@@ -801,7 +751,6 @@
         const actionId = String(actionCounter);
         actionCounter += 1;
         timelineEvents.push({ kind: "action", role: "user", actionId });
-        userActionIds.push(actionId);
         userInterventionProgress.push(currentProgress);
         availableFilterClasses.add("user");
         blocks.push(renderMessage({ role: "user", content: [{ type: "input_text", text: entry.message || "" }] }, tsInline, buildActionCostMarker(actionId)));
@@ -815,6 +764,11 @@
         availableFilterClasses.add("reasoning");
         blocks.push(renderReasoning({ summary: [{ type: "summary_text", text: entry.text || "" }] }, tsInline));
       } else if (typ === "token_count") {
+        const tokenUsageSignature = buildTokenUsageSignature(entry);
+        if (tokenUsageSignature === lastTokenUsageSignature) {
+          continue;
+        }
+        lastTokenUsageSignature = tokenUsageSignature;
         availableFilterClasses.add("usage");
         const metrics = readTokenMetrics(entry);
         if (metrics !== null) {
@@ -841,14 +795,11 @@
       userInterventionProgress,
     );
     const actionCostsByRole = computeActionCostsByRole(timelineEvents);
-    const userActionTotalUsd = sumActionCosts(actionCostsByRole, userActionIds);
-    const userActionScopeTotalUsd = computeUserActionScopeTotalUsd(timelineEvents);
-    const validationHtml = renderCostValidation(userActionTotalUsd, userActionScopeTotalUsd);
     const blocksWithActionCosts = blocks
       .filter(Boolean)
       .map((blockHtml) => injectActionCosts(blockHtml, actionCostsByRole))
       .join("");
-    return `${chartHtml}${validationHtml}${renderToolbar(options.showTokenUsage, availableFilterClasses)}${blocksWithActionCosts}`;
+    return `${chartHtml}${renderToolbar(options.showTokenUsage, availableFilterClasses)}${blocksWithActionCosts}`;
   }
 
   function setCollapsed(el, collapsed) {

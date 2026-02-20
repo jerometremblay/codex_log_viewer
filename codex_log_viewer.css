@@ -88,32 +88,6 @@
       color: #374151;
       margin: 0 0 6px;
     }
-    .cost-validation {
-      margin: 8px 0 14px;
-      padding: 10px 12px;
-      border-radius: 10px;
-      border: 1px solid #d1d5db;
-      background: #f9fafb;
-      color: #1f2937;
-      font-size: 13px;
-    }
-    .cost-validation.ok {
-      border-color: #86efac;
-      background: #f0fdf4;
-    }
-    .cost-validation.warn {
-      border-color: #fca5a5;
-      background: #fef2f2;
-    }
-    .cost-validation-title {
-      font-size: 12px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.02em;
-      margin-bottom: 4px;
-      opacity: 0.9;
-    }
-    .cost-validation-row { margin: 2px 0; }
     .token-chart-svg {
       width: 100%;
       height: auto;
