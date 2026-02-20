@@ -327,6 +327,25 @@ class ExportCurrentConversationAssetsTests(unittest.TestCase):
         self.assertEqual(css_href, "https://example.com/viewer/codex_log_viewer.css")
         self.assertEqual(js_href, "https://example.com/viewer/codex_log_viewer.js")
 
+    def test_write_html_supports_viewer_assets_local_query_toggle(self):
+        with TemporaryDirectory() as temp_dir:
+            html_path = Path(temp_dir) / "session.html"
+            MODULE.write_html(
+                html_path,
+                "session.jsonl",
+                "Codex Conversation Log",
+                MODULE.ONLINE_CSS_HREF,
+                MODULE.ONLINE_JS_HREF,
+            )
+            html_text = html_path.read_text(encoding="utf-8")
+
+            self.assertIn('params.get("viewerAssets") === "local"', html_text)
+            self.assertIn('var localBase = inCodexSessionsDir ? "../" : "./";', html_text)
+            self.assertIn('localBase + "codex_log_viewer.css"', html_text)
+            self.assertIn('localBase + "codex_log_viewer.js"', html_text)
+            self.assertIn(MODULE.ONLINE_CSS_HREF, html_text)
+            self.assertIn(MODULE.ONLINE_JS_HREF, html_text)
+
 
 if __name__ == "__main__":
     unittest.main()
