@@ -1,7 +1,7 @@
 # TLDR;
 
 <a href="https://jerometremblay.github.io/codex_log_viewer/codex_sessions/20260220034532_update-the-conversation-skill.html">
-<img width="920" height="412" alt="image" src="https://github.com/user-attachments/assets/ab5e7cc8-d7c4-48a6-a6d1-ae3c8c6fd0f4" />
+<img width="907" height="758" alt="image" src="https://github.com/user-attachments/assets/f5704180-e223-4202-91ac-948ac82bb412" />
 </a>
 
 # Codex Log Viewer
